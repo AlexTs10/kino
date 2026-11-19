@@ -1,0 +1,21 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  :root { color-scheme: light; }
+  html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+  .b { position: fixed; inset: 0; border-radius: 50%; overflow: hidden; background: #1c1d22; border: 3px solid #fff; box-sizing: border-box; }
+  video { width: 100%; height: 100%; object-fit: cover; display: block; }
+  video.mirror { transform: scaleX(-1); }
+  .spin { position: absolute; left: 50%; top: 50%; width: 30px; height: 30px; margin: -15px; border-radius: 50%; border: 3px solid #ffffff40; border-top-color: #fff; animation: s .8s linear infinite; }
+  .msg { position: absolute; inset: 18%; display: grid; place-items: center; text-align: center; color: #fff; font: 600 12px ui-sans-serif, system-ui, sans-serif; }
+  @keyframes s { to { transform: rotate(360deg); } }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+  <div class="b"><video autoplay muted playsinline></video><div class="spin"></div><div class="msg" hidden></div></div>
+  <script src="bubble.js" type="module"></script>
+</body>
+</html>

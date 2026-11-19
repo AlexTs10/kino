@@ -1,0 +1,46 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "kino",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-01",
+  "observability": { "enabled": true },
+
+  // Share links live on this subdomain. The workers.dev URL keeps working too.
+  // "routes": [{ "pattern": "kino.example.com", "custom_domain": true }],
+  "workers_dev": true,
+
+  // Static files for the share page, library and login page (served free, no Worker request).
+  "assets": { "directory": "./public" },
+
+  "r2_buckets": [{ "binding": "BUCKET", "bucket_name": "kino-videos" }],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "kino",
+      // Replace with the id printed by `npx wrangler d1 create kino`.
+      "database_id": "REPLACE_WITH_YOUR_DATABASE_ID",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  // Workers AI: Whisper for transcripts, a small LLM for title, summary and chapters.
+  "ai": { "binding": "AI" },
+
+  // Runs the AI steps after each upload, with retries.
+  "workflows": [{ "name": "kino-process", "binding": "PROCESS", "class_name": "ProcessVideo" }],
+
+  "vars": {
+    // Origin for share links, so links never show the workers.dev URL.
+    "PUBLIC_URL": "https://kino.example.com",
+    // Workers AI model for title, summary and chapters.
+    "AI_MODEL": "@cf/google/gemma-4-26b-a4b-it",
+    // Sender of the sign-in emails. The domain must be verified in Resend.
+    "FROM_EMAIL": "Kino <login@example.com>"
+  }
+
+  // Secrets (not in this file):
+  //   npx wrangler secret put RESEND_API_KEY       (required: sign-in emails)
+  //   npx wrangler secret put OWNER_EMAIL          (optional: this email gets the videos from before accounts)
+  //   npx wrangler secret put ANTHROPIC_API_KEY    (optional: use Claude for title, summary and chapters)
+  // For local dev, leave RESEND_API_KEY out: the sign-in link prints in the wrangler log.
+}

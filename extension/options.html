@@ -1,0 +1,69 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Kino settings</title>
+<link rel="icon" href="icons/32.png">
+<link rel="stylesheet" href="style.css">
+<style>
+  body { background: var(--card-2); }
+  main { max-width: 560px; margin: 40px auto; padding: 0 16px 60px; }
+  .card { background: var(--bg); border: 1px solid var(--line); border-radius: 16px; padding: 6px 20px 20px; margin-top: 16px; }
+  .card h2 { font-size: 15px; margin: 16px 0 0; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .brand { margin-bottom: 8px; }
+</style>
+</head>
+<body>
+<main>
+  <div class="brand"><img src="icons/48.png" alt="">Kino settings</div>
+
+  <section class="card">
+    <h2>Account</h2>
+    <div class="row" style="margin-top:14px">
+      <span id="status" class="muted">Checking…</span>
+      <button id="account" class="btn primary" hidden></button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Recording</h2>
+    <label class="field" for="quality">Quality</label>
+    <select id="quality">
+      <option value="720">720p (about 20 MB per minute)</option>
+      <option value="1080">1080p (about 35 MB per minute)</option>
+      <option value="1440">1440p (about 55 MB per minute)</option>
+    </select>
+    <label class="switch" style="margin-top:12px"><span>Draw the camera into the video<br><span class="muted" style="font-size:12px">Use this when you record other apps. The camera then shows in a fixed corner, not as a bubble on the page.</span></span><input type="checkbox" id="camInVideo"></label>
+    <div class="two">
+      <div>
+        <label class="field" for="camPosition">Corner (when drawn into the video)</label>
+        <select id="camPosition">
+          <option value="bl">Bottom left</option>
+          <option value="br">Bottom right</option>
+          <option value="tl">Top left</option>
+          <option value="tr">Top right</option>
+        </select>
+      </div>
+      <div>
+        <label class="field" for="camSize">Camera size</label>
+        <select id="camSize">
+          <option value="s">Small</option>
+          <option value="m">Medium</option>
+          <option value="l">Large</option>
+        </select>
+      </div>
+    </div>
+    <label class="switch" style="margin-top:10px"><span>Mirror my camera</span><input type="checkbox" id="mirror"></label>
+    <label class="switch"><span>Reduce background noise</span><input type="checkbox" id="noiseSuppression"></label>
+  </section>
+
+  <section class="card">
+    <h2>Keyboard shortcuts</h2>
+    <p class="muted" style="margin:8px 0 10px">Open Kino: <span class="kbd">Alt Shift K</span> · Pause: <span class="kbd">Alt Shift P</span> · Stop: <span class="kbd">Alt Shift S</span></p>
+    <button class="btn" id="shortcuts">Change shortcuts</button>
+  </section>
+  <script src="options.js" type="module"></script>
+</main>
+</body>
+</html>

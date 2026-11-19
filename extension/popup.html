@@ -1,0 +1,88 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="style.css">
+<style>
+  body { width: 340px; }
+  header { display: flex; align-items: center; gap: 4px; padding: 12px 12px 10px 16px; border-bottom: 1px solid var(--line); }
+  header .brand { margin-right: auto; }
+  main { padding: 14px 16px 16px; }
+  .preview-wrap { display: flex; justify-content: center; margin: 4px 0 8px; }
+  #preview { width: 132px; height: 132px; border-radius: 50%; object-fit: cover; background: var(--card-2); border: 3px solid var(--accent); }
+  #preview.mirror { transform: scaleX(-1); }
+  .meter { height: 4px; border-radius: 2px; background: var(--card-2); margin-top: 6px; overflow: hidden; }
+  .meter > div { height: 100%; width: 0; background: var(--ok); transition: width .08s; }
+  .hint { text-align: center; font-size: 12px; margin-top: 10px; }
+  .notice { background: var(--accent-soft); border-radius: 12px; padding: 12px; margin-bottom: 12px; font-size: 13px; }
+  .notice .btn { margin-top: 8px; }
+  #live { text-align: center; }
+  #live .timer { font-size: 40px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.02em; margin: 6px 0 2px; }
+  #live .state { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; color: var(--danger); }
+  #live .state i { width: 9px; height: 9px; border-radius: 50%; background: currentColor; animation: blink 1s infinite; }
+  #live .state.paused { color: var(--muted); }
+  #live .state.paused i { animation: none; }
+  @keyframes blink { 50% { opacity: .25 } }
+  #live .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 16px; }
+  #live .grid .wide { grid-column: 1 / -1; }
+</style>
+</head>
+<body>
+  <header>
+    <span class="brand"><img src="icons/48.png" alt="">Kino</span>
+    <button class="btn ghost icon" id="library" title="My videos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></button>
+    <button class="btn ghost icon" id="settings" title="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg></button>
+  </header>
+
+  <main>
+    <section id="setup-needed" class="notice" hidden>
+      <strong>Sign in to Kino</strong>
+      <div class="muted">Sign in with your email. Then you can record.</div>
+      <button class="btn primary" id="open-login">Sign in</button>
+    </section>
+
+    <section id="perm-needed" class="notice" hidden>
+      <strong>Allow camera and microphone</strong>
+      <div class="muted">Chrome asks once. Then Kino can show your devices here.</div>
+      <button class="btn primary" id="grant">Allow access</button>
+    </section>
+
+    <section id="setup">
+      <div class="seg" id="modes">
+        <button data-mode="screen-cam"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="14" rx="2"/><circle cx="7.5" cy="13.5" r="2.5" fill="currentColor"/></svg>Screen + Cam</button>
+        <button data-mode="screen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="14" rx="2"/><path d="M8 21h8"/></svg>Screen only</button>
+        <button data-mode="cam"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="10" r="6"/><circle cx="12" cy="10" r="2" fill="currentColor"/><path d="M8 21h8M12 16v5"/></svg>Camera only</button>
+      </div>
+
+      <div id="cam-block">
+        <div class="preview-wrap"><video id="preview" autoplay muted playsinline></video></div>
+        <label class="field" for="cam">Camera</label>
+        <select id="cam"></select>
+      </div>
+
+      <label class="field" for="mic">Microphone</label>
+      <select id="mic"></select>
+      <div class="meter"><div id="level"></div></div>
+
+      <label class="switch" id="sys-row"><span>Include tab and system audio</span><input type="checkbox" id="systemAudio"></label>
+
+      <button class="btn primary big" id="start" style="margin-top:8px">Start recording</button>
+      <div class="hint muted">Open Kino: <span class="kbd">Alt</span> <span class="kbd">Shift</span> <span class="kbd">K</span></div>
+      <p class="err" id="error"></p>
+    </section>
+
+    <section id="live" hidden>
+      <div class="state" id="live-state"><i></i><span>Recording</span></div>
+      <div class="timer" id="live-timer">0:00</div>
+      <div class="grid">
+        <button class="btn" id="live-pause">Pause</button>
+        <button class="btn" id="live-restart">Restart</button>
+        <button class="btn primary wide" id="live-stop">Stop and share</button>
+        <button class="btn danger wide" id="live-delete">Delete recording</button>
+      </div>
+      <div class="hint muted"><span class="kbd">Alt Shift P</span> pause · <span class="kbd">Alt Shift S</span> stop</div>
+    </section>
+  </main>
+  <script src="popup.js" type="module"></script>
+</body>
+</html>

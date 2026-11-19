@@ -1,0 +1,63 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Kino recorder</title>
+<link rel="icon" href="icons/32.png">
+<link rel="stylesheet" href="style.css">
+<style>
+  body { min-height: 100vh; display: grid; grid-template-rows: auto 1fr; background: var(--card-2); }
+  header { display: flex; align-items: center; padding: 14px 20px; }
+  main { display: grid; place-items: center; padding: 20px; }
+  .panel { width: min(760px, 100%); background: var(--bg); border: 1px solid var(--line); border-radius: 20px; padding: 28px; text-align: center; box-shadow: 0 8px 30px #0000000f; }
+  .stage { position: relative; margin: 0 auto 20px; border-radius: 16px; overflow: hidden; background: #000; aspect-ratio: 16 / 9; display: grid; place-items: center; }
+  .stage video { width: 100%; height: 100%; object-fit: contain; }
+  .stage video.mirror { transform: scaleX(-1); }
+  .count { position: absolute; inset: 0; display: grid; place-items: center; background: #0008; color: #fff; font-size: 120px; font-weight: 800; }
+  .status { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; color: var(--danger); }
+  .status i { width: 10px; height: 10px; border-radius: 50%; background: currentColor; animation: blink 1s infinite; }
+  .status.paused { color: var(--muted); }
+  .status.paused i { animation: none; }
+  .status.done { color: var(--ok); }
+  .status.done i { animation: none; }
+  @keyframes blink { 50% { opacity: .25 } }
+  .timer { font-size: 56px; font-weight: 800; letter-spacing: -.03em; font-variant-numeric: tabular-nums; margin: 4px 0 18px; }
+  .controls { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+  .progress { height: 8px; border-radius: 4px; background: var(--card-2); overflow: hidden; margin: 18px auto 8px; max-width: 420px; }
+  .progress > div { height: 100%; width: 0; background: var(--accent); transition: width .3s; }
+  .tip { margin-top: 18px; font-size: 13px; }
+</style>
+</head>
+<body>
+  <header><span class="brand"><img src="icons/48.png" alt="">Kino</span></header>
+  <main>
+    <div class="panel">
+      <div class="stage" id="stage" hidden>
+        <video id="preview" autoplay muted playsinline></video>
+        <div class="count" id="count" hidden></div>
+      </div>
+
+      <div class="status" id="status"><i></i><span id="status-text">Choose what to record</span></div>
+      <div class="timer" id="timer" hidden>0:00</div>
+
+      <div class="controls" id="controls" hidden>
+        <button class="btn" id="pause">Pause</button>
+        <button class="btn" id="restart">Restart</button>
+        <button class="btn primary" id="stop">Stop and share</button>
+        <button class="btn danger" id="delete">Delete</button>
+      </div>
+
+      <div id="uploading" hidden>
+        <div class="progress"><div id="bar"></div></div>
+        <div class="muted" id="upload-text">Uploading…</div>
+      </div>
+
+      <div id="picking" class="muted tip">Chrome shows a window. Choose a tab, a window or your entire screen.</div>
+      <p class="tip muted" id="tip" hidden>You can switch to any tab or app now. Use the Kino controls on the page, the Kino icon, or <span class="kbd">Alt Shift S</span> to stop. Keep this tab open.</p>
+      <p class="err" id="error"></p>
+      <div class="controls" id="retry" hidden><button class="btn primary" id="again">Try again</button><button class="btn" id="close">Close</button></div>
+    </div>
+  </main>
+  <script src="recorder.js" type="module"></script>
+</body>
+</html>

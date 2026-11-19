@@ -1,0 +1,103 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Kino</title>
+<style>
+  :root { color-scheme: light; --fg: #f2f2f5; --muted: #9a9ca8; --row: #26272f; --row-hover: #2e2f38; --line: #ffffff14; --accent: #7c6dff; --red: #e5484d; --green: #3dd68c; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: transparent; }
+  body { font: 14px/1.4 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--fg); -webkit-font-smoothing: antialiased; }
+  [hidden] { display: none !important; }
+  .card { background: #17181d; border-radius: 22px; padding: 14px; overflow: hidden; }
+  header { display: flex; align-items: center; gap: 6px; margin-bottom: 12px; }
+  .brand { display: flex; align-items: center; gap: 9px; font-weight: 700; font-size: 16px; margin-right: auto; padding-left: 4px; }
+  .brand img { width: 26px; height: 26px; border-radius: 8px; }
+  .icon-btn { all: unset; width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; cursor: pointer; color: var(--muted); }
+  .icon-btn:hover { background: var(--row); color: var(--fg); }
+  .icon-btn svg { width: 18px; height: 18px; }
+
+  .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; background: #0f1014; border-radius: 14px; margin-bottom: 10px; }
+  .tabs button { all: unset; display: flex; align-items: center; justify-content: center; gap: 8px; height: 40px; border-radius: 10px; cursor: pointer; color: var(--muted); font-weight: 600; font-size: 13px; }
+  .tabs button svg { width: 18px; height: 18px; }
+  .tabs button[aria-pressed="true"] { background: var(--row); color: var(--fg); box-shadow: 0 1px 2px #0006; }
+
+  .row { position: relative; display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 0 12px 0 14px; margin-top: 8px; border-radius: 14px; background: var(--row); }
+  .row:hover { background: var(--row-hover); }
+  .row > svg { width: 20px; height: 20px; flex: none; color: var(--muted); }
+  .row.on > svg { color: var(--fg); }
+  .row .main { flex: 1; min-width: 0; }
+  .row .label { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row .sub { font-size: 12px; color: var(--muted); }
+  .row select { position: absolute; inset: 0; width: calc(100% - 64px); opacity: 0; cursor: pointer; }
+  .row .chev { width: 14px; height: 14px; color: var(--muted); flex: none; margin-left: -6px; }
+  .toggle { all: unset; flex: none; height: 26px; min-width: 44px; padding: 0 9px; border-radius: 8px; font-weight: 700; font-size: 12px; text-align: center; cursor: pointer;
+    background: #ffffff10; color: var(--muted); border: 1px solid #ffffff14; position: relative; z-index: 1; }
+  .toggle.on { background: #3dd68c1f; color: var(--green); border-color: #3dd68c55; }
+  .meter { position: absolute; left: 46px; right: 72px; bottom: 9px; height: 3px; border-radius: 2px; background: #ffffff10; overflow: hidden; pointer-events: none; }
+  .meter > div { height: 100%; width: 0; background: var(--green); transition: width .07s; }
+
+  .start { all: unset; display: block; width: 100%; height: 52px; margin-top: 14px; border-radius: 14px; background: var(--red); color: #fff; text-align: center;
+    font-weight: 700; font-size: 16px; cursor: pointer; box-shadow: 0 6px 20px #e5484d40; }
+  .start:hover { filter: brightness(1.08); }
+  .start:disabled { opacity: .5; cursor: default; }
+  .hint { text-align: center; color: var(--muted); font-size: 12px; margin-top: 9px; }
+  .kbd { font: 600 11px ui-monospace, monospace; padding: 1px 5px; border-radius: 5px; background: #ffffff10; border: 1px solid #ffffff14; }
+  .notice { background: #7c6dff22; border: 1px solid #7c6dff55; border-radius: 14px; padding: 12px 14px; margin-bottom: 10px; font-size: 13px; }
+  .notice strong { display: block; margin-bottom: 2px; }
+  .notice button { all: unset; margin-top: 8px; padding: 6px 12px; border-radius: 9px; background: var(--accent); color: #fff; font-weight: 700; cursor: pointer; }
+  .err { color: #ff8589; font-size: 12px; margin: 8px 2px 0; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<div class="card" id="card">
+  <header>
+    <span class="brand"><img src="icons/48.png" alt="">Kino</span>
+    <button class="icon-btn" id="library" title="My videos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></button>
+    <button class="icon-btn" id="settings" title="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg></button>
+    <button class="icon-btn" id="close" title="Close (Esc)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+  </header>
+
+  <div class="notice" id="setup-needed" hidden><strong>Sign in to Kino</strong>Sign in with your email. Then you can record.<br><button id="open-login">Sign in</button></div>
+  <div class="notice" id="perm-needed" hidden><strong>Allow camera and microphone</strong>Chrome asks once for Kino.<br><button id="grant">Allow access</button></div>
+
+  <div class="tabs" role="group" aria-label="What to record">
+    <button data-type="screen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="14" rx="2"/><path d="M8 21h8"/></svg>Screen</button>
+    <button data-type="cam"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 13 5.2 3.5a.5.5 0 0 0 .8-.4V7.9a.5.5 0 0 0-.8-.4L16 11"/><rect x="2" y="6" width="14" height="12" rx="2"/></svg>Camera only</button>
+  </div>
+
+  <div class="row on" id="screen-row">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="14" rx="2"/><path d="M8 21h8"/></svg>
+    <div class="main"><div class="label">Screen, window or tab</div><div class="sub">You choose after you click Start</div></div>
+  </div>
+
+  <div class="row" id="cam-row">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 13 5.2 3.5a.5.5 0 0 0 .8-.4V7.9a.5.5 0 0 0-.8-.4L16 11"/><rect x="2" y="6" width="14" height="12" rx="2"/></svg>
+    <div class="main"><div class="label" id="cam-label">Camera</div></div>
+    <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+    <select id="cam" aria-label="Camera"></select>
+    <button class="toggle" id="cam-toggle">On</button>
+  </div>
+
+  <div class="row" id="mic-row">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5"/></svg>
+    <div class="main"><div class="label" id="mic-label">Microphone</div></div>
+    <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+    <select id="mic" aria-label="Microphone"></select>
+    <button class="toggle" id="mic-toggle">On</button>
+    <div class="meter"><div id="level"></div></div>
+  </div>
+
+  <div class="row" id="sys-row">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/></svg>
+    <div class="main"><div class="label">Tab and system audio</div></div>
+    <button class="toggle" id="sys-toggle">On</button>
+  </div>
+
+  <button class="start" id="start">Start recording</button>
+  <div class="hint"><span class="kbd">Alt</span> <span class="kbd">Shift</span> <span class="kbd">K</span> open · <span class="kbd">Alt</span> <span class="kbd">Shift</span> <span class="kbd">S</span> stop</div>
+  <p class="err" id="error"></p>
+</div>
+<script src="panel.js" type="module"></script>
+</body>
+</html>
