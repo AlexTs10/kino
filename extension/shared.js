@@ -19,6 +19,7 @@ export const DEFAULTS = {
   camSize: "m", // s | m | l (bubble size)
   mirror: true,
   openAfter: true,
+  clickHighlights: true, // show a ring on the page where you click while you record
 };
 
 export async function getSettings() {

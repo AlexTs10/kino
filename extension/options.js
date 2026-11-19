@@ -4,11 +4,11 @@ const $ = (id) => document.getElementById(id);
 const s = await getSettings();
 
 for (const id of ["quality", "camPosition", "camSize"]) $(id).value = s[id];
-for (const id of ["mirror", "noiseSuppression", "camInVideo"]) $(id).checked = s[id];
+for (const id of ["mirror", "noiseSuppression", "camInVideo", "clickHighlights"]) $(id).checked = s[id];
 
 // Recording options save at once.
 for (const id of ["quality", "camPosition", "camSize"]) $(id).onchange = () => chrome.storage.local.set({ [id]: $(id).value });
-for (const id of ["mirror", "noiseSuppression", "camInVideo"]) $(id).onchange = () => chrome.storage.local.set({ [id]: $(id).checked });
+for (const id of ["mirror", "noiseSuppression", "camInVideo", "clickHighlights"]) $(id).onchange = () => chrome.storage.local.set({ [id]: $(id).checked });
 
 $("shortcuts").onclick = () => chrome.tabs.create({ url: "chrome://extensions/shortcuts" });
 

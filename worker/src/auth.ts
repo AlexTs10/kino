@@ -30,6 +30,19 @@ export async function sha256(s: string): Promise<string> {
   return b64url(new Uint8Array(await crypto.subtle.digest("SHA-256", enc.encode(s))));
 }
 
+// ponytail: 20k PBKDF2 rounds to stay near the free-tier CPU limit; raise it on a paid plan.
+const PBKDF2_ROUNDS = 20_000;
+
+export async function hashPassword(password: string, salt = randomToken()): Promise<string> {
+  const key = await crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt: enc.encode(salt), iterations: PBKDF2_ROUNDS }, key, 256);
+  return `${salt}:${b64url(new Uint8Array(bits))}`;
+}
+
+export async function checkPassword(password: string, stored: string): Promise<boolean> {
+  return (await hashPassword(password, stored.split(":")[0])) === stored;
+}
+
 export function cookieOpts(c: Context<AppEnv>) {
   return {
     httpOnly: true,

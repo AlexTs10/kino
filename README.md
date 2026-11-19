@@ -25,17 +25,23 @@ The hosted version is free and runs on the Cloudflare free tier, so storage and 
 - Timer on the toolbar icon. Shortcuts: `Alt+Shift+K` open, `Alt+Shift+P` pause, `Alt+Shift+S` stop.
 - Video parts upload while you record. When you stop, the video page opens next to your page and the link is copied.
 - Recording another app (not a Chrome tab)? Turn on "Draw the camera into the video" in Settings.
+- Draw on the page with the pen on the toolbar (lines fade after a few seconds, `Esc` stops). A ring shows where you click (turn it off in Settings). Both work on web pages, not in other apps.
 
 **Share page**
 - Custom player: chapters on the timeline, captions, speed 0.75× to 2.5×, keyboard shortcuts (space, j/k/l, arrows, f, m, c, 0–9), picture in picture, `?t=1m23s` links.
 - Transcript with search, clickable timestamps and auto-scroll.
 - AI title, summary and chapters.
 - Emoji reactions on the timeline and comments with timestamps. No account needed to comment.
-- Owner tools: rename, edit summary, trim (start and end), regenerate AI, delete, download, embed code.
+- Owner tools: rename, edit summary, trim (start and end), cut the file to the trim, regenerate AI, delete, download, embed code.
+- Password and expiry date per link. The owner always sees the video.
+- Viewer insights (owner only): who watched and how much of the video. Viewers who are signed in to Kino show with their name; others with the name they gave for comments, or as anonymous.
 - Open Graph tags for link previews in Slack and others.
 
 **Library** (`/library`)
 - All your videos with search in titles, summaries and transcripts, views, comments and storage use.
+- Merge videos: click **Merge videos**, then the videos in the order you want. Kino makes a new video; the old ones stay.
+
+Cut and merge make the new file in your browser (Chrome or Edge), in real time: a 5-minute result takes 5 minutes. Keep the tab open and in front while it runs.
 
 ## How it works
 
@@ -124,6 +130,7 @@ Without `RESEND_API_KEY`, the sign-in link prints in the `wrangler dev` log. To 
 - Cookie sessions need an `x-kino` header for changes (CSRF guard).
 - Share pages are public to anyone with the link. IDs are 12 random characters (about 71 bits). Pages send `noindex`.
 - Anyone with the link can comment and react. Comments and reactions are accepted only from the share page itself (Origin check), and each video has a limit.
+- A video can have a password (PBKDF2 hash in D1) and an expiry date. After the password, a cookie for that video only opens it for 30 days; a new password closes old cookies.
 - To make share pages private too, put the domain behind Cloudflare Access (free for up to 50 users) and add a bypass rule for `/api/*`.
 
 ## License
@@ -132,8 +139,4 @@ MIT. See [LICENSE](LICENSE).
 
 ## Ideas for later
 
-- Drawing and click highlights while recording
-- Real trim (cut the file) and merge clips
-- Password or expiry per link
-- Viewer insights (who watched, how much)
 - Firefox support

@@ -120,9 +120,10 @@ export function privacyPage(): string {
     <li>Your email address and name, to sign you in and show your name on your videos.</li>
     <li>Your videos, thumbnails and audio. We make a transcript, a title, a summary and chapters with AI (Cloudflare Workers AI, and Anthropic Claude if it is turned on).</li>
     <li>Comments, reactions and view counts on your videos.</li>
+    <li>When you watch a video: a random viewer id in your browser, how many seconds you watched, and your name if you gave one for comments. If you are signed in to Kino, the owner of the video sees your name or email.</li>
   </ul>
   <h2>Who can see your videos</h2>
-  <p>Each video has a share link that is hard to guess. Each person who has the link can watch the video. We do not sell your data and we do not show ads.</p>
+  <p>Each video has a share link that is hard to guess. Each person who has the link can watch the video, unless the owner set a password or an end date. We do not sell your data and we do not show ads.</p>
   <h2>Email</h2>
   <p>We send sign-in emails with Resend.</p>
   <h2>Delete your data</h2>
@@ -156,6 +157,25 @@ export function homePage(): string {
   return card("Kino", `<p class="muted">Record your screen and camera. Share a link with a transcript and an AI summary.</p>
   <p><a class="btn primary" href="/login">Sign in or create an account</a></p>
   <p class="muted" style="font-size:12px"><a href="/privacy">Privacy policy</a> · <a href="/support">Support</a></p>`);
+}
+
+export function passwordPage(id: string, embed: boolean, error = ""): string {
+  return card(
+    "Password · Kino",
+    `<h1>This video has a password</h1>
+  <p class="muted">Enter the password that you got from the owner.</p>
+  <form method="post" action="/${esc(id)}/unlock">
+    <input name="password" type="password" placeholder="Password" autocomplete="current-password" required autofocus>
+    <input name="embed" type="hidden" value="${embed ? "1" : ""}">
+    <button class="btn primary" type="submit">Watch the video</button>
+  </form>
+  <p class="err">${esc(error)}</p>`,
+  );
+}
+
+export function expiredPage(): string {
+  return card("Link expired · Kino", `<h1>This link has expired</h1>
+  <p class="muted">The owner set an end date for this video. Ask the owner for a new link.</p>`);
 }
 
 export function notFoundPage(): string {

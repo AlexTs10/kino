@@ -50,7 +50,19 @@ export class ProcessVideo extends WorkflowEntrypoint<Bindings, Params> {
         ),
       );
       const language = results.find((r) => r.language)?.language ?? null;
-      const segments: Segment[] = results.flatMap((r) => r.segments);
+      let segments: Segment[] = results.flatMap((r) => r.segments);
+      // After a cut, the audio parts start before the file: move the lines and drop the ones that were cut.
+      // Outside a step on purpose: a replay of the workflow must shift the lines again.
+      const row = await step.do("read cut offset", async () =>
+        this.env.DB.prepare("SELECT audio_shift_ms, duration_ms FROM videos WHERE id = ?").bind(id).first<{ audio_shift_ms: number; duration_ms: number | null }>(),
+      );
+      const shift = row?.audio_shift_ms ?? 0;
+      if (shift) {
+        const end = row?.duration_ms || Infinity;
+        segments = segments
+          .map((s) => ({ s: Math.max(0, s.s - shift), e: Math.min(end, s.e - shift), t: s.t }))
+          .filter((s) => s.e > 0 && s.s < end);
+      }
 
       const wordCount = await step.do("save transcript", async () => {
         const transcript: Transcript = { language, segments };

@@ -1,5 +1,6 @@
 import { createPlayer } from "./player.js";
 import { fill, $, h, ICONS, clock, ago, fmtDate, avatar, api, toast, copy, openMenu, store } from "./util.js";
+import { pickMime, renderClips } from "./render.js";
 
 const boot = JSON.parse($("#boot").textContent);
 let v = boot.video;
@@ -44,12 +45,16 @@ function renderEmbed() {
   fill(app, mount);
   player = makePlayer(mount, { brand: { href: shareUrl, text: v.title } });
   loadTranscript();
+  trackWatching();
 }
+
+// ?v= changes when the file changes (after a cut), so no cache keeps the old file.
+const videoSrc = () => `${base}/video?v=${v.size_bytes || 0}`;
 
 function makePlayer(mount, extra = {}) {
   return createPlayer(mount, {
-    src: `${base}/video`,
-    poster: v.has_thumb ? `${base}/thumb.jpg` : "",
+    src: videoSrc(),
+    poster: v.has_thumb ? `${base}/thumb.jpg?v=${v.size_bytes || 0}` : "",
     durationHint: (v.duration_ms || 0) / 1000,
     trim: { start: v.trim_start_ms, end: v.trim_end_ms },
     chapters: v.chapters || [],
@@ -81,19 +86,22 @@ function renderShare() {
   const byline = h("div", { className: "byline", id: "byline" });
   const summary = h("section", { className: "card summary", id: "summary" });
   const trimPanel = h("section", { className: "card trim", id: "trim", hidden: true });
+  const accessPanel = h("section", { className: "card trim", id: "access", hidden: true });
 
   const main = h("div", { className: "main" },
     mount, reactbar,
     h("div", { className: "title-row" }, titleEl),
-    byline, trimPanel, summary,
+    byline, trimPanel, accessPanel, summary,
   );
   const side = h("aside", { className: "card side" },
     h("div", { className: "tabs", role: "tablist" },
       h("button", { role: "tab", id: "tab-transcript", onclick: () => selectTab("transcript") }, "Transcript"),
       h("button", { role: "tab", id: "tab-comments", onclick: () => selectTab("comments") }, "Comments", h("span", { className: "count", id: "comment-count" })),
+      owner ? h("button", { role: "tab", id: "tab-viewers", onclick: () => selectTab("viewers") }, "Viewers") : null,
     ),
     h("div", { className: "pane", id: "pane-transcript" }),
     h("div", { className: "pane", id: "pane-comments" }),
+    owner ? h("div", { className: "pane", id: "pane-viewers" }) : null,
   );
   fill(app, topbar, h("div", { className: "layout" }, main, side));
 
@@ -105,8 +113,9 @@ function renderShare() {
   renderSummary();
   renderTranscriptPane();
   renderComments();
-  selectTab(store("tab") || "transcript");
+  selectTab(TABS.includes(store("tab")) ? store("tab") : "transcript");
   loadTranscript();
+  trackWatching();
   if (PENDING.includes(v.ai_status)) pollAI();
 
   // Just recorded: the extension opens the page with ?new=1. Copy the link for the owner.
@@ -128,6 +137,7 @@ function moreMenu() {
   if (owner) {
     items.push("-",
       { label: "Trim video", icon: "scissors", onclick: openTrim },
+      { label: "Password and expiry", icon: "lock", onclick: openAccess },
       { label: "Regenerate transcript and summary", icon: "sparkle", onclick: regenerate },
       "-",
       { label: "Delete video", icon: "trash", danger: true, onclick: deleteVideo },
@@ -146,7 +156,15 @@ function renderByline() {
     h("span", {}, "·"),
     h("span", {}, `${v.views} view${v.views === 1 ? "" : "s"}`),
     chip,
+    accessChip(),
   );
+}
+
+function accessChip() {
+  if (!owner || (!v.has_password && !v.expires_at)) return null;
+  const expired = v.expires_at && v.expires_at <= Date.now();
+  const text = [v.has_password ? "Password" : null, v.expires_at ? (expired ? "Expired" : `Expires ${fmtDate(v.expires_at)}`) : null].filter(Boolean).join(" · ");
+  return h("button", { className: `chip ${expired ? "danger" : ""}`, style: "border:0;cursor:pointer", title: "Change password and expiry", html: ICONS.lock, onclick: openAccess }, text);
 }
 
 function aiChip() {
@@ -374,12 +392,102 @@ function onTime(t) {
   if (at) at.textContent = `at ${clock(player.visibleTime())}`;
 }
 
+const TABS = owner ? ["transcript", "comments", "viewers"] : ["transcript", "comments"];
+
 function selectTab(name) {
   store("tab", name);
-  for (const n of ["transcript", "comments"]) {
+  for (const n of TABS) {
     $(`#tab-${n}`).setAttribute("aria-selected", String(n === name));
     $(`#pane-${n}`).hidden = n !== name;
   }
+  if (name === "viewers") loadViewers();
+}
+
+// ---------- Viewer insights ----------
+
+// Sends how many different seconds this viewer played. Owner views do not count (the server checks that too).
+function trackWatching() {
+  if (owner) return;
+  let viewer = store("viewer");
+  if (!/^[0-9A-Za-z]{8,40}$/.test(viewer || "")) store("viewer", (viewer = crypto.randomUUID().replace(/-/g, "")));
+  const seen = new Set();
+  let sent = 0;
+  player.onTime((t) => { if (!player.video.paused) seen.add(Math.floor(t)); });
+  const send = (beacon) => {
+    if (seen.size === sent) return;
+    sent = seen.size;
+    const body = JSON.stringify({ viewer, name: store("name") || "", seconds: seen.size });
+    if (beacon) navigator.sendBeacon(`${base}/watch`, new Blob([body], { type: "application/json" }));
+    else fetch(`${base}/watch`, { method: "POST", headers: { "content-type": "application/json" }, body }).catch(() => {});
+  };
+  setInterval(() => send(false), 15000);
+  document.addEventListener("visibilitychange", () => document.visibilityState === "hidden" && send(true));
+  addEventListener("pagehide", () => send(true));
+}
+
+async function loadViewers() {
+  const pane = $("#pane-viewers");
+  let rows;
+  try {
+    rows = (await api(`/api/videos/${v.id}/insights`)).viewers;
+  } catch (e) {
+    return fill(pane, h("div", { className: "empty" }, e.message));
+  }
+  if (!rows.length) {
+    return fill(pane, h("div", { className: "empty", html: ICONS.eye }, h("div", {}, "No viewers yet. Your own views do not count.")));
+  }
+  const end = player.endTime();
+  const dur = Number.isFinite(end) ? end - player.trimStart() : (v.duration_ms || 0) / 1000;
+  const pct = (s) => (dur > 0 ? Math.min(100, Math.round((s / dur) * 100)) : 0);
+  const avg = Math.round(rows.reduce((n, r) => n + pct(r.seconds), 0) / rows.length);
+  fill(pane,
+    h("div", { className: "pane-tools muted", style: "font-size:13px" }, `${rows.length} viewer${rows.length === 1 ? "" : "s"} · on average ${avg}% watched`),
+    h("div", { className: "scroll" }, rows.map((r) => h("div", { className: "viewer" },
+      avatar(r.name || "?", 30),
+      h("div", { className: "body" },
+        h("div", { className: "meta" },
+          h("strong", {}, r.name || "Anonymous viewer"),
+          h("span", { className: "when", title: new Date(r.updated_at).toLocaleString() }, ago(r.updated_at))),
+        h("div", { className: "meter", title: `${clock(r.seconds)} watched` }, h("div", { style: `width:${pct(r.seconds)}%` }))),
+      h("span", { className: "pct" }, `${pct(r.seconds)}%`),
+    ))),
+  );
+}
+
+// ---------- Owner: password and expiry ----------
+
+const localInput = (ts) => {
+  const d = new Date(ts);
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  return d.toISOString().slice(0, 16);
+};
+
+function openAccess() {
+  const panel = $("#access");
+  panel.hidden = false;
+  const pw = h("input", { type: "password", placeholder: v.has_password ? "New password" : "Password", autocomplete: "new-password", maxLength: 200 });
+  const exp = h("input", { type: "datetime-local", value: v.expires_at ? localInput(v.expires_at) : "" });
+  const save = async (patch, msg) => {
+    try {
+      const r = await api(`/api/videos/${v.id}`, { method: "PATCH", body: JSON.stringify(patch) });
+      v = { ...v, has_password: r.video.has_password, expires_at: r.video.expires_at };
+      toast(msg);
+      renderByline();
+      openAccess();
+    } catch (e) { toast(e.message); }
+  };
+  fill(panel,
+    h("div", { className: "row" }, h("strong", { html: ICONS.lock, style: "width:18px;height:18px;display:inline-block" }), h("strong", {}, "Password and expiry"),
+      h("span", { className: "muted", style: "font-size:13px" }, "You always see your own videos.")),
+    h("div", { className: "row" }, h("span", { className: "muted", style: "min-width:64px" }, "Password"), pw,
+      h("button", { className: "btn small", onclick: () => (pw.value ? save({ password: pw.value }, "Password saved") : pw.focus()) }, "Save"),
+      v.has_password ? h("button", { className: "btn small ghost", onclick: () => save({ password: null }, "Password removed") }, "Remove") : null),
+    h("div", { className: "row" }, h("span", { className: "muted", style: "min-width:64px" }, "Expires"), exp,
+      h("button", { className: "btn small", onclick: () => (exp.value ? save({ expires_at: new Date(exp.value).getTime() }, "Expiry saved") : exp.focus()) }, "Save"),
+      v.expires_at ? h("button", { className: "btn small ghost", onclick: () => save({ expires_at: null }, "The link does not expire") }, "Never") : null),
+    h("div", { className: "row" }, h("button", { className: "btn small", onclick: () => (panel.hidden = true) }, "Close")),
+  );
+  panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
 // ---------- Reactions ----------
@@ -481,7 +589,7 @@ function openTrim() {
   };
   fill(panel, 
     h("div", { className: "row" }, h("strong", { html: `${ICONS.scissors}` , style: "width:18px;height:18px;display:inline-block" }), h("strong", {}, "Trim video"),
-      h("span", { className: "muted", style: "font-size:13px" }, "Viewers see only the part between start and end. The file does not change.")),
+      h("span", { className: "muted", style: "font-size:13px" }, "Viewers see only the part between start and end. To make the file shorter too, save the trim, then click Cut the file.")),
     h("div", { className: "row" }, h("span", { className: "muted", style: "min-width:44px" }, "Start"), sEl,
       h("button", { className: "btn small", onclick: () => { start = Math.round(player.realTime() * 1000); draw(); } }, "Set to current time"),
       h("button", { className: "btn small ghost", onclick: () => { start = 0; draw(); } }, "Reset")),
@@ -490,7 +598,8 @@ function openTrim() {
       h("button", { className: "btn small ghost", onclick: () => { end = null; draw(); } }, "Reset")),
     h("div", { className: "row" },
       h("button", { className: "btn primary small", onclick: save }, "Save trim"),
-      h("button", { className: "btn small", onclick: () => close() }, "Cancel")),
+      h("button", { className: "btn small", onclick: () => close() }, "Cancel"),
+      v.trim_start_ms || v.trim_end_ms ? h("button", { className: "btn small", style: "margin-left:auto", onclick: cutFile }, "Cut the file") : null),
   );
   draw();
   panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -506,6 +615,36 @@ function openTrim() {
       renderComments();
       toast("Trim saved");
     } catch (e) { toast(e.message); }
+  }
+}
+
+// Real trim: render the saved trim into a new file. It replaces the old file; the link stays the same.
+async function cutFile() {
+  const mimeType = pickMime();
+  if (!mimeType) return toast("This browser cannot make video files. Use Chrome or Edge.");
+  if (!confirm("Cut the file to the saved trim? The parts outside the trim are deleted. You cannot undo this.")) return;
+  const panel = $("#trim");
+  const status = h("p", { className: "muted", style: "margin:0" }, "Starting…");
+  fill(panel, h("strong", {}, "Cutting the file"), status,
+    h("p", { className: "muted", style: "margin:0;font-size:13px" }, "Keep this tab open and in front. This takes as long as the trimmed video. You do not hear the sound."));
+  player.pause();
+  try {
+    await api(`/api/videos/${v.id}/edit`, { method: "POST", body: JSON.stringify({ mimeType }) });
+    const out = await renderClips(
+      [{ src: videoSrc(), start: (v.trim_start_ms || 0) / 1000, end: v.trim_end_ms ? v.trim_end_ms / 1000 : null, duration: (v.duration_ms || 0) / 1000 }],
+      {
+        mimeType,
+        uploadPart: (n, blob) => api(`/api/videos/${v.id}/edit/parts/${n}`, { method: "PUT", body: blob }),
+        onProgress: (done, total) => (status.textContent = `Making the new file… ${clock(done)} of ${clock(total)}`),
+      },
+    );
+    status.textContent = "Saving…";
+    await api(`/api/videos/${v.id}/edit/complete`, { method: "POST", body: JSON.stringify({ parts: out.parts, durationMs: out.durationMs }) });
+    if (out.thumb) await api(`/api/videos/${v.id}/thumbnail`, { method: "PUT", body: out.thumb }).catch(() => {});
+    location.reload();
+  } catch (e) {
+    status.textContent = `The cut failed: ${e.message}. The old file did not change.`;
+    status.className = "err";
   }
 }
 

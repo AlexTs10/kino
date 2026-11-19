@@ -13,6 +13,7 @@
     restart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>',
     trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>',
     grip: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="8" cy="9" r="1.6"/><circle cx="16" cy="9" r="1.6"/><circle cx="12" cy="9" r="1.6"/><circle cx="8" cy="15" r="1.6"/><circle cx="12" cy="15" r="1.6"/><circle cx="16" cy="15" r="1.6"/></svg>',
+    pen: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
     camoff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m2 2 20 20M10.4 6H14a2 2 0 0 1 2 2v3.6l1 1 5-3.6v8"/><path d="M16 16a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h2"/></svg>',
   };
 
@@ -46,6 +47,7 @@
   .bar button:hover:not(:disabled) { background: rgba(255,255,255,.14); }
   .bar button:disabled { opacity: .4; cursor: default; }
   .bar button svg { width: 20px; height: 20px; }
+  .bar button.on { background: rgba(255,255,255,.22); color: #ffd54a; }
   .bar button.stop { background: #e5484d; }
   .bar button.stop:hover:not(:disabled) { background: #f05a5f; }
   .bar .time { font: 700 13px ui-sans-serif, system-ui, sans-serif; font-variant-numeric: tabular-nums; padding: 4px 0 2px; display: flex; flex-direction: column; align-items: center; gap: 4px; }
@@ -64,7 +66,14 @@
     font: 800 100px ui-sans-serif, system-ui, sans-serif; box-shadow: 0 20px 60px rgba(0,0,0,.4); animation: pop 1s ease-out infinite; }
   .count .hint { position: absolute; top: calc(50% + 120px); color: #fff; font: 600 15px ui-sans-serif, system-ui, sans-serif; text-shadow: 0 1px 6px rgba(0,0,0,.5); }
   @keyframes pop { from { transform: scale(1.12); } to { transform: scale(1); } }
+
+  .ink { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; }
+  .ink.on { pointer-events: auto; cursor: crosshair; }
+  .ring { position: fixed; width: 40px; height: 40px; margin: -20px 0 0 -20px; border-radius: 50%; pointer-events: none;
+    border: 3px solid #ffc53d; background: rgba(255,197,61,.28); animation: ring .6s ease-out forwards; }
+  @keyframes ring { from { transform: scale(.35); opacity: 1; } to { transform: scale(1.5); opacity: 0; } }
 </style>
+<canvas class="ink" hidden></canvas>
 <iframe class="panel" hidden allow="camera; microphone" title="Kino"></iframe>
 <div class="bubble" hidden>
   <iframe allow="camera" title="Kino camera"></iframe>
@@ -78,6 +87,7 @@
     <button class="stop" title="Stop and share (Alt+Shift+S)">${ICON.stop}</button>
     <div class="time"><i></i><span class="t">0:00</span></div>
     <button class="pause" title="Pause (Alt+Shift+P)">${ICON.pause}</button>
+    <button class="pen" title="Draw on the page (Esc to stop)">${ICON.pen}</button>
     <button class="restart" title="Restart">${ICON.restart}</button>
     <button class="trash" title="Delete">${ICON.trash}</button>
     <div class="sep" style="margin:4px auto"></div>
@@ -95,7 +105,7 @@
 
   let panelOpen = false;
   let rec = { status: "idle" };
-  let cfg = { camOn: true, recordType: "screen", camSize: "m", bubblePos: null, barPos: null };
+  let cfg = { camOn: true, recordType: "screen", camSize: "m", bubblePos: null, barPos: null, clickHighlights: true };
   let timer = null;
   let wasActive = false;
 
@@ -177,6 +187,78 @@
     placeBar();
   }, () => chrome.storage.local.set({ barPos: cfg.barPos }), bar);
 
+  // ---------- Drawing and click highlights ----------
+  // They are on the page, so they are in the recording when you record this tab, its window or the screen.
+
+  const ink = $(".ink");
+  const inkCtx = ink.getContext("2d");
+  const FADE_AFTER = 2500; // a line stays this long after you draw it, then fades
+  const FADE_MS = 600;
+  let drawing = false;
+  let strokes = []; // { pts: [[x, y]], end: ms | null }
+  let inkFrame = 0;
+
+  $(".bar .pen").onclick = () => {
+    drawing = !drawing;
+    render();
+  };
+
+  function sizeInk() {
+    const d = devicePixelRatio || 1;
+    ink.width = Math.round(innerWidth * d);
+    ink.height = Math.round(innerHeight * d);
+    inkCtx.setTransform(d, 0, 0, d, 0, 0);
+  }
+  sizeInk();
+
+  ink.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
+    ink.setPointerCapture(e.pointerId);
+    const s = { pts: [[e.clientX, e.clientY]], end: null };
+    strokes.push(s);
+    const move = (ev) => s.pts.push([ev.clientX, ev.clientY]);
+    const up = () => {
+      s.end = performance.now();
+      ink.removeEventListener("pointermove", move);
+      ink.removeEventListener("pointerup", up);
+      ink.removeEventListener("pointercancel", up);
+    };
+    ink.addEventListener("pointermove", move);
+    ink.addEventListener("pointerup", up);
+    ink.addEventListener("pointercancel", up);
+    drawInk();
+  });
+
+  function drawInk() {
+    cancelAnimationFrame(inkFrame);
+    const now = performance.now();
+    strokes = strokes.filter((s) => s.end === null || now - s.end < FADE_AFTER + FADE_MS);
+    inkCtx.clearRect(0, 0, innerWidth, innerHeight);
+    inkCtx.lineCap = inkCtx.lineJoin = "round";
+    inkCtx.lineWidth = 5;
+    inkCtx.strokeStyle = "#e5484d";
+    for (const s of strokes) {
+      inkCtx.globalAlpha = s.end === null ? 1 : Math.min(1, Math.max(0, 1 - (now - s.end - FADE_AFTER) / FADE_MS));
+      inkCtx.beginPath();
+      s.pts.forEach(([x, y], i) => (i ? inkCtx.lineTo(x, y) : inkCtx.moveTo(x, y)));
+      if (s.pts.length === 1) inkCtx.lineTo(s.pts[0][0] + 0.1, s.pts[0][1]); // a dot
+      inkCtx.stroke();
+    }
+    if (strokes.length) inkFrame = requestAnimationFrame(drawInk);
+  }
+
+  // A ring where you click on the page. Clicks on the Kino controls do not show.
+  function onPagePointer(e) {
+    if (rec.status !== "recording" || cfg.clickHighlights === false || drawing || e.button !== 0) return;
+    if (e.composedPath().includes(host)) return;
+    const ring = document.createElement("div");
+    ring.className = "ring";
+    ring.style.left = `${e.clientX}px`;
+    ring.style.top = `${e.clientY}px`;
+    root.append(ring);
+    setTimeout(() => ring.remove(), 650);
+  }
+
   function fmt(ms) {
     const s = Math.max(0, Math.floor(ms / 1000));
     const h = Math.floor(s / 3600);
@@ -212,6 +294,12 @@
     $(".count").hidden = st !== "countdown";
     if (recording) placeBar();
 
+    const live = st === "recording" || st === "paused";
+    if (!live) drawing = false;
+    ink.hidden = !live;
+    ink.classList.toggle("on", drawing);
+    $(".bar .pen").classList.toggle("on", drawing);
+
     clearInterval(timer);
     if (recording) {
       tick();
@@ -245,7 +333,7 @@
 
   async function refresh() {
     try {
-      const data = await chrome.storage.local.get(["recState", "camOn", "recordType", "camSize", "bubblePos", "barPos"]);
+      const data = await chrome.storage.local.get(["recState", "camOn", "recordType", "camSize", "bubblePos", "barPos", "clickHighlights"]);
       rec = data.recState || { status: "idle" };
       cfg = { ...cfg, ...data, camSize: data.camSize || "m" };
       if (!host.isConnected) (document.body || document.documentElement).append(host);
@@ -272,6 +360,7 @@
   }
 
   function onResize() {
+    sizeInk();
     if (!bubble.hidden) placeBubble();
     if (!bar.hidden) placeBar();
   }
@@ -280,6 +369,8 @@
     clearInterval(timer);
     host.remove();
     removeEventListener("resize", onResize);
+    removeEventListener("pointerdown", onPagePointer, true);
+    removeEventListener("keydown", onKey);
     document.removeEventListener("visibilitychange", onVisibility);
     try {
       chrome.storage.onChanged.removeListener(onStorage);
@@ -292,7 +383,16 @@
   chrome.runtime.onMessage.addListener(onMessage);
   addEventListener("resize", onResize);
   document.addEventListener("visibilitychange", onVisibility);
-  addEventListener("keydown", (e) => { if (e.key === "Escape" && panelOpen) setPanel(false); });
+  addEventListener("pointerdown", onPagePointer, true);
+  function onKey(e) {
+    if (e.key !== "Escape") return;
+    if (panelOpen) setPanel(false);
+    if (drawing) {
+      drawing = false;
+      render();
+    }
+  }
+  addEventListener("keydown", onKey);
   window.__kino = { refresh };
   refresh();
 })();
