@@ -1,7 +1,7 @@
 // Shared helpers for extension pages and the service worker.
 
 // ponytail: one fixed server. Change this line to test against `wrangler dev` (and add it to host_permissions).
-export const SERVER = "https://kino.example.com";
+export const SERVER = "https://kino.alextoska.xyz";
 const SESSION_COOKIE = "kino_session";
 
 export const DEFAULTS = {

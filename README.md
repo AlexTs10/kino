@@ -4,6 +4,16 @@ A small, self-hosted alternative to Loom. A Chrome extension records your screen
 
 Made to run on the Cloudflare **free tier**.
 
+## Use the hosted version (no setup)
+
+You do not have to host Kino yourself. A free hosted version runs at **https://kino.alextoska.xyz**.
+
+1. Download this repository (Code → Download ZIP) and unzip it.
+2. Open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked** and select the `extension` folder.
+3. Sign in with your email. The extension already points to the hosted version.
+
+The hosted version is free and runs on the Cloudflare free tier, so storage and AI minutes are shared by all users. There is no guarantee of uptime or that videos are kept forever. For important videos, host your own copy (see Setup).
+
 ## Features
 
 **Recording (Chrome extension)**
@@ -82,7 +92,7 @@ npx wrangler secret put OWNER_EMAIL      # optional: this email gets the videos 
 npm run deploy
 ```
 
-Before you deploy, set your values in `worker/wrangler.jsonc`: `PUBLIC_URL` (your Worker URL or domain) and `FROM_EMAIL` (a sender on a domain verified in Resend). Also set `SERVER` in `extension/shared.js` to the same URL as `PUBLIC_URL`.
+Before you deploy, set your values in `worker/wrangler.jsonc`: `PUBLIC_URL` (your Worker URL or domain) and `FROM_EMAIL` (a sender on a domain verified in Resend). Also set `SERVER` in `extension/shared.js` to the same URL as `PUBLIC_URL` (by default it points to the hosted version).
 
 For your own subdomain, uncomment `routes` in `worker/wrangler.jsonc`, set the name (for example `kino.example.com`), and deploy again.
 
