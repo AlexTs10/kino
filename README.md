@@ -8,9 +8,8 @@ Made to run on the Cloudflare **free tier**.
 
 You do not have to host Kino yourself. A free hosted version runs at **https://kino.alextoska.xyz**.
 
-1. Download this repository (Code → Download ZIP) and unzip it.
-2. Open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked** and select the `extension` folder.
-3. Sign in with your email. The extension already points to the hosted version.
+1. Install [Kino Recorder from the Chrome Web Store](https://chromewebstore.google.com/detail/kino-recorder/hiofelaknamloippdoijjoiiefleflab).
+2. Sign in with your email. The extension already points to the hosted version.
 
 The hosted version is free and runs on the Cloudflare free tier, so storage and AI minutes are shared by all users. There is no guarantee of uptime or that videos are kept forever. For important videos, host your own copy (see Setup).
 
@@ -32,7 +31,7 @@ The hosted version is free and runs on the Cloudflare free tier, so storage and 
 - Transcript with search, clickable timestamps and auto-scroll.
 - AI title, summary and chapters.
 - Emoji reactions on the timeline and comments with timestamps. No account needed to comment.
-- Owner tools: rename, edit summary, trim (start and end), cut the file to the trim, regenerate AI, delete, download, embed code.
+- Owner tools: rename, edit summary, trim (start and end), a cut editor (split at the playhead, delete parts, preview, then cut the file), regenerate AI, delete, download, embed code.
 - Password and expiry date per link. The owner always sees the video.
 - Viewer insights (owner only): who watched and how much of the video. Viewers who are signed in to Kino show with their name; others with the name they gave for comments, or as anonymous.
 - Open Graph tags for link previews in Slack and others.

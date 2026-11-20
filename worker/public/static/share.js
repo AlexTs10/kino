@@ -136,6 +136,7 @@ function moreMenu() {
   ];
   if (owner) {
     items.push("-",
+      { label: "Edit video (cut)", icon: "scissors", onclick: openEditor },
       { label: "Trim video", icon: "scissors", onclick: openTrim },
       { label: "Password and expiry", icon: "lock", onclick: openAccess },
       { label: "Regenerate transcript and summary", icon: "sparkle", onclick: regenerate },
@@ -366,6 +367,7 @@ function renderTranscriptPane() {
 
 function onTime(t) {
   const ms = t * 1000;
+  editor?.tick(ms);
   // Active transcript line
   let hit = null;
   for (const el of segEls) {
@@ -567,14 +569,111 @@ async function deleteComment(c) {
   } catch (e) { toast(e.message); }
 }
 
-// ---------- Owner: trim, delete ----------
+// ---------- Owner: cut editor, trim, delete ----------
+
+const fullMs = () => Math.round((Number.isFinite(player.video.duration) && player.video.duration > 0 ? player.video.duration : (v.duration_ms || 0) / 1000) * 1000);
+let editor = null; // { tick(ms) } while the cut editor is open
+
+// Split the video at the playhead, delete parts, preview (deleted parts are skipped), then make the new file.
+function openEditor() {
+  const full = fullMs();
+  if (!full) return toast("Wait until the video has loaded.");
+  $("#access").hidden = true;
+  const panel = $("#trim");
+  panel.hidden = false;
+  // Start from the saved trim. parts cover the full file: [{ s, e, del }] in ms.
+  const ts = v.trim_start_ms || 0, te = Math.min(v.trim_end_ms || full, full);
+  let parts = [{ s: ts, e: te, del: false }];
+  if (ts > 0) parts.unshift({ s: 0, e: ts, del: true });
+  if (te < full) parts.push({ s: te, e: full, del: true });
+  let sel = parts.findIndex((p) => !p.del);
+  const history = [];
+  player.setTrim(0, null);
+
+  const bar = h("div", { className: "cutbar", title: "Click to move the playhead and select a part" });
+  const head = h("div", { className: "cuthead" });
+  const info = h("span", { className: "muted", style: "font-size:13px" });
+  const delBtn = h("button", { className: "btn small", onclick: toggleDel });
+  const undoBtn = h("button", { className: "btn small ghost", onclick: () => { [parts, sel] = history.pop(); draw(); } }, "Undo");
+  const saveBtn = h("button", { className: "btn primary small", onclick: () => cutFile(keep()) }, "Cut the file");
+  const pct = (ms) => `${(ms / full) * 100}%`;
+
+  bar.onclick = (e) => {
+    const r = bar.getBoundingClientRect();
+    const ms = Math.max(0, Math.min(full, ((e.clientX - r.left) / r.width) * full));
+    sel = Math.max(0, parts.findIndex((p) => ms < p.e));
+    player.seekReal(ms / 1000);
+    draw();
+  };
+  const remember = () => history.push([parts.map((p) => ({ ...p })), sel]);
+  function split() {
+    const ms = Math.round(player.realTime() * 1000);
+    const i = parts.findIndex((p) => ms < p.e);
+    const p = parts[i];
+    if (!p || ms - p.s < 300 || p.e - ms < 300) return toast("Move the playhead away from a cut first.");
+    remember();
+    parts.splice(i, 1, { ...p, e: ms }, { ...p, s: ms });
+    sel = i + 1;
+    draw();
+  }
+  function toggleDel() {
+    remember();
+    parts[sel].del = !parts[sel].del;
+    draw();
+  }
+  // The parts that stay, with neighbours joined.
+  function keep() {
+    const out = [];
+    for (const p of parts) {
+      if (p.del) continue;
+      if (out.at(-1)?.e === p.s) out.at(-1).e = p.e;
+      else out.push({ s: p.s, e: p.e });
+    }
+    return out;
+  }
+  function draw() {
+    fill(bar, ...parts.map((p, i) => h("div", { className: `cutpart${p.del ? " del" : ""}${i === sel ? " sel" : ""}`, style: `left:${pct(p.s)};width:${pct(p.e - p.s)}` })), head);
+    const kept = keep().reduce((n, r) => n + r.e - r.s, 0);
+    info.textContent = `Selected part ${clock(parts[sel].s / 1000)}–${clock(parts[sel].e / 1000)}. New length ${clock(kept / 1000)} of ${clock(full / 1000)}.`;
+    delBtn.textContent = parts[sel].del ? "Keep this part" : "Delete this part";
+    undoBtn.disabled = !history.length;
+    saveBtn.disabled = kept < 1000 || kept === full;
+    editor.tick(player.realTime() * 1000);
+  }
+  function close() {
+    editor = null;
+    panel.hidden = true;
+    player.setTrim(v.trim_start_ms, v.trim_end_ms);
+  }
+  editor = {
+    tick(ms) {
+      head.style.left = pct(ms);
+      // Preview: jump over deleted parts while the video plays.
+      const p = !player.video.paused && parts.find((x) => x.del && ms >= x.s && ms < x.e - 50);
+      if (p) player.seekReal(p.e / 1000);
+    },
+  };
+
+  fill(panel,
+    h("div", { className: "row" }, h("strong", { html: ICONS.scissors, style: "width:18px;height:18px;display:inline-block" }), h("strong", {}, "Edit video"),
+      h("span", { className: "muted", style: "font-size:13px" }, "Split at the playhead, then delete the parts you do not want. Play to preview: deleted parts are skipped.")),
+    bar,
+    h("div", { className: "row" },
+      h("button", { className: "btn small", onclick: split }, "Split at playhead"),
+      delBtn, undoBtn, info),
+    h("div", { className: "row" }, saveBtn, h("button", { className: "btn small", onclick: close }, "Cancel")),
+  );
+  draw();
+  panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
 
 function openTrim() {
+  editor = null;
   const panel = $("#trim");
   panel.hidden = false;
   let start = v.trim_start_ms || 0;
   let end = v.trim_end_ms || null;
-  const full = () => Math.round((player.video.duration && Number.isFinite(player.video.duration) ? player.video.duration : (v.duration_ms || 0) / 1000) * 1000);
+  const full = fullMs;
   // Show the full video while trimming.
   player.setTrim(0, null);
   const sEl = h("span", { className: "t" });
@@ -599,7 +698,7 @@ function openTrim() {
     h("div", { className: "row" },
       h("button", { className: "btn primary small", onclick: save }, "Save trim"),
       h("button", { className: "btn small", onclick: () => close() }, "Cancel"),
-      v.trim_start_ms || v.trim_end_ms ? h("button", { className: "btn small", style: "margin-left:auto", onclick: cutFile }, "Cut the file") : null),
+      v.trim_start_ms || v.trim_end_ms ? h("button", { className: "btn small", style: "margin-left:auto", onclick: () => cutFile([{ s: v.trim_start_ms || 0, e: v.trim_end_ms || full() }]) }, "Cut the file") : null),
   );
   draw();
   panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -618,11 +717,13 @@ function openTrim() {
   }
 }
 
-// Real trim: render the saved trim into a new file. It replaces the old file; the link stays the same.
-async function cutFile() {
+// Render the parts that stay (keep: [{ s, e }] in ms of the file) into a new file. It replaces the old file; the link stays the same.
+async function cutFile(keep) {
   const mimeType = pickMime();
   if (!mimeType) return toast("This browser cannot make video files. Use Chrome or Edge.");
-  if (!confirm("Cut the file to the saved trim? The parts outside the trim are deleted. You cannot undo this.")) return;
+  if (!confirm("Make the new file? The deleted parts are removed from the file. You cannot undo this.")) return;
+  const full = fullMs();
+  editor = null;
   const panel = $("#trim");
   const status = h("p", { className: "muted", style: "margin:0" }, "Starting…");
   fill(panel, h("strong", {}, "Cutting the file"), status,
@@ -631,15 +732,16 @@ async function cutFile() {
   try {
     await api(`/api/videos/${v.id}/edit`, { method: "POST", body: JSON.stringify({ mimeType }) });
     const out = await renderClips(
-      [{ src: videoSrc(), start: (v.trim_start_ms || 0) / 1000, end: v.trim_end_ms ? v.trim_end_ms / 1000 : null, duration: (v.duration_ms || 0) / 1000 }],
+      keep.map((r) => ({ src: videoSrc(), start: r.s / 1000, end: r.e >= full ? null : r.e / 1000, duration: full / 1000 })),
       {
         mimeType,
         uploadPart: (n, blob) => api(`/api/videos/${v.id}/edit/parts/${n}`, { method: "PUT", body: blob }),
+        uploadAudio: (n, startMs, blob) => api(`/api/videos/${v.id}/edit/audio/${n}?start=${startMs}`, { method: "PUT", headers: { "content-type": "audio/webm" }, body: blob }),
         onProgress: (done, total) => (status.textContent = `Making the new file… ${clock(done)} of ${clock(total)}`),
       },
     );
     status.textContent = "Saving…";
-    await api(`/api/videos/${v.id}/edit/complete`, { method: "POST", body: JSON.stringify({ parts: out.parts, durationMs: out.durationMs }) });
+    await api(`/api/videos/${v.id}/edit/complete`, { method: "POST", body: JSON.stringify({ parts: out.parts, durationMs: out.durationMs, keep }) });
     if (out.thumb) await api(`/api/videos/${v.id}/thumbnail`, { method: "PUT", body: out.thumb }).catch(() => {});
     location.reload();
   } catch (e) {

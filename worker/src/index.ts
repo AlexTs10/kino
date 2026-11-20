@@ -2,6 +2,7 @@ import { Hono, type Context } from "hono";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import { bearerUser, checkPassword, cookieOpts, cookieUser, createSession, currentUser, deleteSession, hashPassword, LOGIN_MINUTES, randomToken, sha256, SESSION_COOKIE, type AppEnv, type Bindings } from "./auth";
 import type { Chapter, Transcript } from "./ai";
+import { cleanRanges, cutTimeline, keptMs, rangeTable } from "./cut";
 import { checkEmailPage, expiredPage, homePage, libraryPage, loginPage, notFoundPage, passwordPage, privacyPage, sharePage, supportPage, verifyPage } from "./pages";
 
 export { ProcessVideo } from "./ai";
@@ -264,8 +265,8 @@ api.put("/videos/:id/parts/:n", async (c) => {
   return putPart(c, v.video_key, v.upload_id);
 });
 
-// ---------- Cut the file (real trim) ----------
-// The share page renders the trimmed part into a new file and uploads it here.
+// ---------- Cut the file (trim and cut editor) ----------
+// The share page renders the parts that stay into a new file and uploads it here.
 // The new file replaces the old one under the same link. Transcript, chapters, comments and reactions move with it.
 
 api.post("/videos/:id/edit", async (c) => {
@@ -276,6 +277,8 @@ api.post("/videos/:id/edit", async (c) => {
   if (v.edit_key && v.edit_upload_id) await c.env.BUCKET.resumeMultipartUpload(v.edit_key, v.edit_upload_id).abort().catch(() => {});
   const key = `videos/${v.id}/video-${Date.now()}.${extFor(mime)}`;
   const upload = await c.env.BUCKET.createMultipartUpload(key, { httpMetadata: { contentType: mime.split(";")[0] } });
+  const leftover = (await c.env.BUCKET.list({ prefix: `videos/${v.id}/edit-audio/` })).objects.map((o) => o.key);
+  if (leftover.length) await c.env.BUCKET.delete(leftover);
   await c.env.DB.prepare("UPDATE videos SET edit_key = ?, edit_upload_id = ? WHERE id = ?").bind(key, upload.uploadId, v.id).run();
   return c.json({ ok: true });
 });
@@ -286,41 +289,65 @@ api.put("/videos/:id/edit/parts/:n", async (c) => {
   return putPart(c, v.edit_key, v.edit_upload_id);
 });
 
+api.put("/videos/:id/edit/audio/:n", async (c) => {
+  const v = await ownVideo(c);
+  if (!v?.edit_key || !v.edit_upload_id) return c.json({ error: "no cut in progress" }, 409);
+  return putAudio(c, `videos/${v.id}/edit-audio`);
+});
+
 api.post("/videos/:id/edit/complete", async (c) => {
   const v = await ownVideo(c);
   if (!v?.edit_key || !v.edit_upload_id) return c.json({ error: "no cut in progress" }, 409);
-  const body = await c.req.json<{ parts: R2UploadedPart[]; durationMs?: number }>();
+  const body = await c.req.json<{ parts: R2UploadedPart[]; durationMs?: number; keep?: unknown }>();
+  const keep = cleanRanges(body.keep);
+  if (!keep) return c.json({ error: "bad parts to keep" }, 400);
   const obj = await c.env.BUCKET.resumeMultipartUpload(v.edit_key, v.edit_upload_id).complete(body.parts.sort((a, b) => a.partNumber - b.partNumber));
-  const shift = v.trim_start_ms ?? 0;
-  const dur = Math.round(Number(body.durationMs) || 0) || Math.max(0, (v.trim_end_ms ?? v.duration_ms ?? 0) - shift);
-  const end = shift + dur;
+  const dur = Math.round(Number(body.durationMs) || 0) || keptMs(keep);
 
   let text = v.transcript_text;
   const t = await getTranscript(c.env, v.id);
+  const cut = cutTimeline(keep, t?.segments ?? [], v.chapters ? (JSON.parse(v.chapters) as Chapter[]) : []);
   if (t) {
-    t.segments = t.segments.filter((s) => s.e > shift && s.s < end).map((s) => ({ s: Math.max(0, s.s - shift), e: Math.min(dur, s.e - shift), t: s.t }));
+    t.segments = cut.segments;
     await c.env.BUCKET.put(`videos/${v.id}/transcript.json`, JSON.stringify(t), { httpMetadata: { contentType: "application/json" } });
     text = t.segments.map((s) => s.t).join(" ").slice(0, 500_000);
   }
-  const chapters = ((v.chapters ? JSON.parse(v.chapters) : []) as Chapter[])
-    .filter((ch, i, all) => (all[i + 1]?.start ?? Infinity) * 1000 > shift && ch.start * 1000 < end) // keep the chapter that runs at the cut
-    .map((ch) => ({ ...ch, start: Math.max(0, Math.round(ch.start - shift / 1000)) }));
-  if (chapters.length) chapters[0].start = 0;
+  await moveEditAudio(c.env, v.id);
 
+  // New time of t_ms, or NULL when t_ms is in a deleted part. ?1 is rangeTable(keep).
+  const map = `(SELECT t_ms - json_extract(value, '$[0]') + json_extract(value, '$[2]') FROM json_each(?1)
+    WHERE t_ms BETWEEN json_extract(value, '$[0]') AND json_extract(value, '$[1]'))`;
+  const ranges = JSON.stringify(rangeTable(keep));
   await c.env.DB.batch([
     c.env.DB.prepare(
       `UPDATE videos SET video_key = ?, mime_type = ?, size_bytes = ?, duration_ms = ?, trim_start_ms = NULL, trim_end_ms = NULL,
-         edit_key = NULL, edit_upload_id = NULL, audio_shift_ms = audio_shift_ms + ?, chapters = ?, transcript_text = ? WHERE id = ?`,
-    ).bind(v.edit_key, obj.httpMetadata?.contentType || v.mime_type, obj.size, dur, shift, chapters.length >= 2 ? JSON.stringify(chapters) : null, text, v.id),
-    // Comments outside the kept part stay, without a time.
-    c.env.DB.prepare("UPDATE comments SET t_ms = CASE WHEN t_ms >= ?1 AND t_ms <= ?2 THEN t_ms - ?1 ELSE NULL END WHERE video_id = ?3 AND t_ms IS NOT NULL").bind(shift, end, v.id),
-    c.env.DB.prepare("DELETE FROM reactions WHERE video_id = ? AND (t_ms < ? OR t_ms > ?)").bind(v.id, shift, end),
-    c.env.DB.prepare("UPDATE reactions SET t_ms = t_ms - ? WHERE video_id = ?").bind(shift, v.id),
+         edit_key = NULL, edit_upload_id = NULL, audio_shift_ms = 0, chapters = ?, transcript_text = ? WHERE id = ?`,
+    ).bind(v.edit_key, obj.httpMetadata?.contentType || v.mime_type, obj.size, dur, cut.chapters.length ? JSON.stringify(cut.chapters) : null, text, v.id),
+    // Comments in a deleted part stay, without a time. Reactions there are deleted.
+    c.env.DB.prepare(`UPDATE comments SET t_ms = ${map} WHERE video_id = ?2 AND t_ms IS NOT NULL`).bind(ranges, v.id),
+    c.env.DB.prepare(`DELETE FROM reactions WHERE video_id = ?2 AND t_ms IS NOT NULL AND ${map} IS NULL`).bind(ranges, v.id),
+    c.env.DB.prepare(`UPDATE reactions SET t_ms = ${map} WHERE video_id = ?2 AND t_ms IS NOT NULL`).bind(ranges, v.id),
   ]);
   // Delete the old file only after the row points to the new one.
   if (v.video_key !== v.edit_key) await c.env.BUCKET.delete(v.video_key);
   return c.json({ ok: true, size: obj.size });
 });
+
+// The cut also records new audio parts (for "Regenerate"). They replace the old ones only when the cut is saved.
+async function moveEditAudio(env: Bindings, id: string) {
+  const fresh = (await env.BUCKET.list({ prefix: `videos/${id}/edit-audio/` })).objects.map((o) => o.key);
+  const made = new Set<string>();
+  for (const key of fresh) {
+    const obj = await env.BUCKET.get(key);
+    if (!obj) continue;
+    const to = key.replace("/edit-audio/", "/audio/");
+    await env.BUCKET.put(to, obj.body, { httpMetadata: obj.httpMetadata, customMetadata: obj.customMetadata });
+    made.add(to);
+  }
+  const old = (await env.BUCKET.list({ prefix: `videos/${id}/audio/` })).objects.map((o) => o.key).filter((k) => !made.has(k));
+  if (old.length) await env.BUCKET.delete(old);
+  if (fresh.length) await env.BUCKET.delete(fresh);
+}
 
 // ---------- Viewer insights ----------
 
@@ -337,18 +364,22 @@ api.get("/videos/:id/insights", async (c) => {
 api.put("/videos/:id/audio/:n", async (c) => {
   const v = await ownVideo(c);
   if (!v) return c.json({ error: "not found" }, 404);
+  return putAudio(c, `videos/${v.id}/audio`);
+});
+
+async function putAudio(c: Context<AppEnv>, folder: string) {
   const n = Number(c.req.param("n"));
   const startMs = Math.max(0, Math.round(Number(c.req.query("start") ?? 0)));
   if (!Number.isInteger(n) || n < 1 || n > 9999 || !Number.isFinite(startMs)) return c.json({ error: "bad audio part" }, 400);
   const body = await c.req.arrayBuffer();
   if (body.byteLength === 0) return c.json({ ok: true, skipped: true });
   if (body.byteLength > 25_000_000) return c.json({ error: "audio part too large" }, 413);
-  await c.env.BUCKET.put(`videos/${v.id}/audio/${String(n).padStart(4, "0")}.webm`, body, {
+  await c.env.BUCKET.put(`${folder}/${String(n).padStart(4, "0")}.webm`, body, {
     httpMetadata: { contentType: c.req.header("content-type")?.split(";")[0] || "audio/webm" },
     customMetadata: { startMs: String(startMs) },
   });
   return c.json({ ok: true });
-});
+}
 
 api.post("/videos/:id/complete", async (c) => {
   const v = await ownVideo(c);

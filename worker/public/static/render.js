@@ -119,7 +119,7 @@ export async function renderClips(clips, { mimeType, uploadPart, uploadAudio, on
 
   try {
     for (const [i, c] of clips.entries()) {
-      if (i > 0) {
+      if (i > 0 && video.src !== new URL(c.src, location.href).href) {
         video.src = c.src;
         await once(video, "loadeddata");
       }

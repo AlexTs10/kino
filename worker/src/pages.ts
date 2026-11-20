@@ -8,13 +8,13 @@ function json(data: unknown): string {
   return JSON.stringify(data).replace(/</g, "\\u003c");
 }
 
-function head(title: string, extra = ""): string {
+function head(title: string, extra = "", index = false): string {
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex, nofollow">
+${index ? "" : `<meta name="robots" content="noindex, nofollow">`}
 <meta name="color-scheme" content="light dark">
 <title>${esc(title)}</title>
 <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
@@ -153,10 +153,91 @@ export function supportPage(note = ""): string {
   );
 }
 
+const GITHUB_URL = "https://github.com/AlexTs10/kino";
+const STORE_URL = "https://chromewebstore.google.com/detail/kino-recorder/hiofelaknamloippdoijjoiiefleflab";
+
+const ic = (d: string) =>
+  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+
+const FEATURES: [icon: string, title: string, text: string][] = [
+  [`<rect x="2" y="5" width="14" height="14" rx="3"/><path d="m16 10 6-3v10l-6-3"/>`, "Screen and camera", "Record a tab, a window or your full screen. A round camera bubble follows you, and you can draw on the page while you talk."],
+  [`<path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/>`, "A link when you stop", "The video uploads while you record. Click Stop and the share link is on your clipboard."],
+  [`<path d="M12 3l2 6 6 2-6 2-2 6-2-6-6-2 6-2z"/>`, "AI title, summary, chapters", "Each video gets a transcript that you can search, a title, a summary and chapters on the timeline."],
+  [`<path d="M21 12a8 8 0 0 1-12 7l-5 1 1-5a8 8 0 1 1 16-3z"/>`, "Comments and reactions", "Viewers add comments with a timestamp and emoji on the timeline. They do not need an account."],
+  [`<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>`, "Password, expiry, insights", "Set a password or an end date for each link. See who watched and how much of the video."],
+  [`<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.1 15.9M14.5 14.5 20 20M8.1 8.1 12 12"/>`, "Trim, cut and merge", "Trim the start and the end, cut the file, or merge videos into one. All in your browser."],
+];
+
 export function homePage(): string {
-  return card("Kino", `<p class="muted">Record your screen and camera. Share a link with a transcript and an AI summary.</p>
-  <p><a class="btn primary" href="/login">Sign in or create an account</a></p>
-  <p class="muted" style="font-size:12px"><a href="/privacy">Privacy policy</a> · <a href="/support">Support</a></p>`);
+  const desc = "Kino is a free, open-source screen recorder for Chrome. Share a link with a transcript, an AI summary, chapters and comments.";
+  const meta = `<meta name="description" content="${desc}">
+<meta property="og:title" content="Kino · Open-source screen recorder">
+<meta property="og:description" content="${desc}">`;
+  return `${head("Kino · Open-source screen recorder", meta, true)}
+<body class="landing">
+<header class="topbar">
+  <a class="brand" href="/"><span class="logo"></span>Kino</a>
+  <span class="spacer"></span>
+  <a class="gh" href="${GITHUB_URL}">GitHub</a>
+  <a class="btn" href="/login">Sign in</a>
+</header>
+<main>
+<section class="hero">
+  <a class="chip accent" href="${GITHUB_URL}">Open source · MIT license</a>
+  <h1>Record your screen.<br><em>Share a link.</em></h1>
+  <p class="lede">Kino is a free, open-source alternative to Loom. Record your screen and camera in Chrome. Your viewers get a transcript, an AI summary, chapters and comments.</p>
+  <div class="cta">
+    <a class="btn primary big" href="${STORE_URL}">Add to Chrome, free</a>
+    <a class="btn big" href="${GITHUB_URL}">★ Star on GitHub</a>
+  </div>
+  <p class="muted fine">No credit card. Sign in with your email, or <a href="#selfhost">host it yourself</a>.</p>
+  <div class="mock" aria-hidden="true">
+    <div class="mock-bar"><i></i><i></i><i></i><span>Onboarding walkthrough · Kino</span></div>
+    <div class="mock-body">
+      <div class="mock-player">
+        <div class="mock-screen"><b></b><b></b><b></b><b></b></div>
+        <span class="mock-cam"></span>
+        <span class="mock-play">${ic(`<path d="M8 5v14l11-7z" fill="currentColor"/>`)}</span>
+        <div class="mock-rail"><b class="on"></b><b class="on"></b><b></b><b></b><b></b></div>
+      </div>
+      <div class="mock-side">
+        <div class="mock-h">${ic(FEATURES[2]![0])}AI summary</div>
+        <p>A walk through the new onboarding flow: what changed, why it changed, and what to test before the release.</p>
+        <div class="mock-h">Transcript</div>
+        <div class="mock-line"><span>0:04</span>So this is the new onboarding flow.</div>
+        <div class="mock-line on"><span>0:19</span>The first screen now asks for one thing only.</div>
+        <div class="mock-line"><span>0:41</span>Then we go directly to the dashboard.</div>
+        <div class="mock-line"><span>1:02</span>Please test the invite step on mobile.</div>
+      </div>
+    </div>
+  </div>
+</section>
+<section class="feats">
+  ${FEATURES.map(([d, t, s]) => `<div class="card feat"><span class="feat-ic">${ic(d)}</span><h3>${t}</h3><p>${s}</p></div>`).join("\n  ")}
+</section>
+<section class="selfhost" id="selfhost">
+  <div>
+    <h2>Your videos, your server</h2>
+    <p class="muted">Kino is MIT licensed. Deploy your own copy to Cloudflare: one Worker, R2 for the videos, D1 for the data and Workers AI for the transcript. It is made to fit in the free tier.</p>
+    <div class="stats">
+      <div><strong>$0</strong><span>per month on the free tier</span></div>
+      <div><strong>4.5 h</strong><span>of 1080p video in 10 GB</span></div>
+      <div><strong>0</strong><span>cost for video views</span></div>
+    </div>
+    <p><a class="btn" href="${GITHUB_URL}#setup">Read the setup guide</a></p>
+  </div>
+  <pre><code><span># full steps are in the README</span>
+git clone ${GITHUB_URL}
+cd kino/worker
+npm install
+npm run deploy</code></pre>
+</section>
+</main>
+<footer class="foot muted">
+  <a href="${GITHUB_URL}">GitHub</a> · <a href="${STORE_URL}">Chrome Web Store</a> · <a href="/privacy">Privacy policy</a> · <a href="/support">Support</a>
+</footer>
+</body>
+</html>`;
 }
 
 export function passwordPage(id: string, embed: boolean, error = ""): string {
