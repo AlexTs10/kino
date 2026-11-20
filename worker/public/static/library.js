@@ -1,5 +1,5 @@
 import { fill, $, h, ICONS, clock, ago, fmtDate, fmtSize, avatar, api, toast, copy, openMenu } from "./util.js";
-import { pickMime, renderClips } from "./render.js";
+import { pickMime, renderClips, retry } from "./render.js";
 
 const boot = JSON.parse($("#boot").textContent);
 let ownerName = boot.ownerName || "";
@@ -16,6 +16,9 @@ let picked = []; // video ids, in merge order
 let videos = [];
 const mergeBtn = h("button", { className: "btn", html: `${ICONS.merge}<span>Merge videos</span>`, onclick: () => setPicking(!picking) });
 const mergeBar = h("div", { className: "card mergebar", hidden: true });
+const uploadBar = h("div", { className: "card mergebar", hidden: true });
+const picker = h("input", { type: "file", accept: "video/*", hidden: true, onchange: () => picker.files[0] && upload(picker.files[0]) });
+const uploadBtn = h("button", { className: "btn", html: `${ICONS.upload}<span>Upload video</span>`, onclick: () => picker.click() });
 const who = h("button", { className: "btn ghost", onclick: (e) => openMenu(e.currentTarget, [
   { label: ownerName ? `Change name (${ownerName})` : "Set your name", icon: "user", onclick: setName },
   { label: "Sign out", icon: "logout", onclick: () => (location.href = "/logout") },
@@ -33,8 +36,9 @@ async function deleteAccount() {
 fill(app, 
   h("header", { className: "topbar" }, h("a", { className: "brand", href: "/library" }, h("span", { className: "logo" }), "Kino"), h("span", { className: "spacer" }), who),
   h("main", { className: "lib" },
-    h("div", { className: "lib-head" }, h("h1", {}, "My videos"), search, mergeBtn),
+    h("div", { className: "lib-head" }, h("h1", {}, "My videos"), search, uploadBtn, mergeBtn, picker),
     usage,
+    uploadBar,
     mergeBar,
     grid,
   ),
@@ -86,7 +90,7 @@ async function load() {
 
   if (!videos.length) {
     fill(grid, h("div", { className: "empty", style: "grid-column:1/-1" },
-      search.value ? "No videos match your search." : "No videos yet. Click the Kino icon in Chrome, or press Alt+Shift+K, to record your first video."));
+      search.value ? "No videos match your search." : "No videos yet. Click the Kino icon in Chrome, or press Alt+Shift+K, to record your first video, or click Upload video."));
   } else {
     drawGrid();
   }
@@ -194,6 +198,91 @@ async function merge() {
     fill(mergeBar, h("span", { className: "err" }, `The merge failed: ${e.message}`), h("span", { style: "flex:1" }), h("button", { className: "btn small", onclick: () => setPicking(false) }, "Close"));
     mergeBtn.disabled = false;
     picked = [];
+  }
+}
+
+// ---------- Upload ----------
+
+const PART_SIZE = 10 * 1024 * 1024; // R2 rule: equal parts of at least 5 MiB, like the recorder
+const AUDIO_MAX_BYTES = 500e6; // the browser decodes all the sound into memory; bigger files get no transcript
+
+// Duration and a first-frame thumbnail, read by the browser. A format it cannot play gives { durationMs: null }.
+async function probe(file) {
+  const v = h("video", { muted: true, preload: "auto", playsInline: true, src: URL.createObjectURL(file) });
+  try {
+    await new Promise((ok, bad) => { v.onloadeddata = ok; v.onerror = bad; });
+    const durationMs = Number.isFinite(v.duration) ? Math.round(v.duration * 1000) : null;
+    v.currentTime = Math.min(1, v.duration / 2 || 0);
+    await new Promise((ok) => (v.onseeked = ok));
+    const W = Math.min(1280, v.videoWidth);
+    const canvas = h("canvas", { width: W, height: Math.round((v.videoHeight * W) / v.videoWidth) });
+    canvas.getContext("2d").drawImage(v, 0, 0, canvas.width, canvas.height);
+    return { durationMs, thumb: W ? await new Promise((r) => canvas.toBlob(r, "image/jpeg", 0.82)) : null };
+  } catch { return { durationMs: null, thumb: null }; }
+  finally { URL.revokeObjectURL(v.src); }
+}
+
+// The sound as 16 kHz mono WAV parts of one minute (about 2 MB each), for the transcript.
+async function audioParts(file) {
+  const ac = new AudioContext();
+  const decoded = await ac.decodeAudioData(await file.arrayBuffer()).finally(() => ac.close());
+  const rate = 16000;
+  const off = new OfflineAudioContext(1, Math.ceil(decoded.duration * rate), rate);
+  const src = off.createBufferSource();
+  src.buffer = decoded;
+  src.connect(off.destination);
+  src.start();
+  const pcm = (await off.startRendering()).getChannelData(0);
+  const parts = [];
+  for (let i = 0; i < pcm.length; i += 60 * rate) {
+    const s = pcm.subarray(i, i + 60 * rate);
+    const buf = new DataView(new ArrayBuffer(44 + s.length * 2));
+    const str = (o, t) => [...t].forEach((ch, k) => buf.setUint8(o + k, ch.charCodeAt(0)));
+    str(0, "RIFF"); buf.setUint32(4, 36 + s.length * 2, true); str(8, "WAVEfmt ");
+    buf.setUint32(16, 16, true); buf.setUint16(20, 1, true); buf.setUint16(22, 1, true);
+    buf.setUint32(24, rate, true); buf.setUint32(28, rate * 2, true); buf.setUint16(32, 2, true); buf.setUint16(34, 16, true);
+    str(36, "data"); buf.setUint32(40, s.length * 2, true);
+    s.forEach((x, k) => buf.setInt16(44 + k * 2, Math.max(-1, Math.min(1, x)) * 0x7fff, true));
+    parts.push({ startMs: Math.round((i / rate) * 1000), blob: new Blob([buf], { type: "audio/wav" }) });
+  }
+  return parts;
+}
+
+async function upload(file) {
+  picker.value = "";
+  if (!file.type.startsWith("video/")) return toast("Choose a video file.");
+  const status = h("span", {}, "Starting…");
+  uploadBtn.disabled = true;
+  uploadBar.hidden = false;
+  fill(uploadBar, h("strong", {}, `Uploading ${file.name}`), status, h("span", { className: "muted", style: "font-size:13px" }, "Keep this tab open."));
+  let created = null;
+  try {
+    const { durationMs, thumb } = await probe(file);
+    created = await api("/api/videos", { method: "POST", body: JSON.stringify({ title: file.name.replace(/\.[^.]+$/, ""), mimeType: file.type }) });
+    const id = created.id;
+    const parts = [];
+    const count = Math.max(1, Math.ceil(file.size / PART_SIZE));
+    for (let n = 1; n <= count; n++) {
+      status.textContent = `${Math.round(((n - 1) / count) * 100)}% of ${fmtSize(file.size)}`;
+      const p = await retry(() => api(`/api/videos/${id}/parts/${n}`, { method: "PUT", body: file.slice((n - 1) * PART_SIZE, n * PART_SIZE) }));
+      parts.push({ partNumber: p.partNumber, etag: p.etag });
+    }
+    // No sound, or a format the browser cannot decode: the video is still shared, only without a transcript.
+    if (file.size <= AUDIO_MAX_BYTES) {
+      status.textContent = "Preparing the transcript…";
+      const audio = await audioParts(file).catch(() => []);
+      for (const [i, a] of audio.entries()) {
+        await retry(() => api(`/api/videos/${id}/audio/${i + 1}?start=${a.startMs}`, { method: "PUT", headers: { "content-type": "audio/wav" }, body: a.blob }));
+      }
+    }
+    status.textContent = "Saving…";
+    await api(`/api/videos/${id}/complete`, { method: "POST", body: JSON.stringify({ parts, durationMs }) });
+    if (thumb) await api(`/api/videos/${id}/thumbnail`, { method: "PUT", body: thumb }).catch(() => {});
+    location.href = `/${id}`;
+  } catch (e) {
+    if (created) api(`/api/videos/${created.id}`, { method: "DELETE" }).catch(() => {});
+    fill(uploadBar, h("span", { className: "err" }, `The upload failed: ${e.message}`), h("span", { style: "flex:1" }), h("button", { className: "btn small", onclick: () => (uploadBar.hidden = true) }, "Close"));
+    uploadBtn.disabled = false;
   }
 }
 

@@ -26,7 +26,7 @@ function once(el, ev) {
   });
 }
 
-async function retry(fn, tries = 5) {
+export async function retry(fn, tries = 5) {
   for (let i = 0; ; i++) {
     try { return await fn(); } catch (e) {
       if (i >= tries - 1) throw e;

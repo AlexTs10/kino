@@ -58,7 +58,7 @@ function newId(len = 12): string {
 }
 
 function extFor(mime: string): string {
-  return mime.startsWith("video/mp4") ? "mp4" : "webm";
+  return mime.startsWith("video/mp4") ? "mp4" : mime.startsWith("video/quicktime") ? "mov" : "webm";
 }
 
 async function getVideo(db: D1Database, id: string) {

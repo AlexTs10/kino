@@ -37,6 +37,7 @@ The hosted version is free and runs on the Cloudflare free tier, so storage and 
 - Open Graph tags for link previews in Slack and others.
 
 **Library** (`/library`)
+- Upload a video file (MP4, WebM, MOV) with **Upload video**. It gets the same share page, transcript and AI summary as a recording (transcript for files up to 500 MB).
 - All your videos with search in titles, summaries and transcripts, views, comments and storage use.
 - Merge videos: click **Merge videos**, then the videos in the order you want. Kino makes a new video; the old ones stay.
 
