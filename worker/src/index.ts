@@ -354,7 +354,7 @@ async function moveEditAudio(env: Bindings, id: string) {
 api.get("/videos/:id/insights", async (c) => {
   const v = await ownVideo(c);
   if (!v) return c.json({ error: "not found" }, 404);
-  const { results } = await c.env.DB.prepare("SELECT name, seconds, created_at, updated_at FROM watches WHERE video_id = ? ORDER BY updated_at DESC LIMIT 500")
+  const { results } = await c.env.DB.prepare("SELECT name, seconds, created_at, updated_at, ip, place FROM watches WHERE video_id = ? ORDER BY updated_at DESC LIMIT 500")
     .bind(v.id)
     .all();
   return c.json({ viewers: results });
@@ -584,11 +584,34 @@ app.get("/library", async (c) => {
 
 // ---------- Public share pages ----------
 
+// Where a request comes from: IP and approximate place from Cloudflare (city level, not the street).
+function origin(c: Context<AppEnv>) {
+  const cf = (c.req.raw as { cf?: Record<string, unknown> }).cf ?? {};
+  const place = [cf.city, cf.region, cf.country].filter(Boolean).join(", ");
+  const net = String(cf.asOrganization ?? "");
+  return { ip: c.req.header("cf-connecting-ip") ?? "", place: [place, net].filter(Boolean).join(" · ").slice(0, 200), tz: String(cf.timezone ?? "") };
+}
+
+function device(ua: string) {
+  const os = /iPhone/.test(ua) ? "iPhone" : /iPad/.test(ua) ? "iPad" : /Android/.test(ua) ? "Android" : /Windows/.test(ua) ? "Windows" : /Mac OS X/.test(ua) ? "Mac" : /Linux/.test(ua) ? "Linux" : "";
+  const br = /Edg\//.test(ua) ? "Edge" : /OPR\//.test(ua) ? "Opera" : /Firefox\//.test(ua) ? "Firefox" : /Chrome\//.test(ua) ? "Chrome" : /Safari\//.test(ua) ? "Safari" : "";
+  return [os, br].filter(Boolean).join(", ") || ua.slice(0, 120) || "unknown";
+}
+
 async function mailView(c: Context<AppEnv>, v: Video) {
   const to = await c.env.DB.prepare("SELECT email FROM users WHERE id = ?").bind(v.user_id).first<{ email: string }>();
   if (!to) return;
   const link = `${c.env.PUBLIC_URL || new URL(c.req.url).origin}/${v.id}`;
   const times = `${v.views} time${v.views === 1 ? "" : "s"}`;
+  const o = origin(c);
+  const local = o.tz ? new Date().toLocaleString("en-GB", { timeZone: o.tz, dateStyle: "medium", timeStyle: "short" }) : "";
+  const info = [
+    `IP: ${o.ip || "unknown"}`,
+    `Location: ${o.place || "unknown"}`,
+    `Device: ${device(c.req.header("user-agent") ?? "")}`,
+    local && `Their local time: ${local} (${o.tz})`,
+    c.req.header("referer") && `Came from: ${c.req.header("referer")}`,
+  ].filter(Boolean).join("\n");
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { authorization: `Bearer ${c.env.RESEND_API_KEY}`, "content-type": "application/json" },
@@ -596,7 +619,7 @@ async function mailView(c: Context<AppEnv>, v: Video) {
       from: c.env.FROM_EMAIL,
       to: to.email,
       subject: `Someone watched "${v.title}" (viewed ${times})`,
-      text: `Someone opened your video "${v.title}".\n\nIt is now viewed ${times}.\n\n${link}`,
+      text: `Someone opened your video "${v.title}".\n\n${info}\n\nIt is now viewed ${times}.\n\n${link}`,
     }),
   });
   if (!res.ok) console.error("resend view", res.status, await res.text());
@@ -661,14 +684,15 @@ app.post(`/:id${ID}/watch`, async (c) => {
   const name = (user ? user.name || user.email : String(b.name ?? "")).trim().slice(0, 60);
   const seconds = Math.min(86_400, Math.max(0, Math.round(Number(b.seconds) || 0)));
   const now = Date.now();
+  const o = origin(c);
   // ponytail: one D1 write per viewer every 15 s; send less often if the free 100k writes per day get tight.
   await c.env.DB.prepare(
-    `INSERT INTO watches (video_id, viewer, name, seconds, created_at, updated_at)
-       SELECT ?1, ?2, ?3, ?4, ?5, ?5 WHERE (SELECT COUNT(*) FROM watches WHERE video_id = ?1) < ?6
+    `INSERT INTO watches (video_id, viewer, name, seconds, created_at, updated_at, ip, place)
+       SELECT ?1, ?2, ?3, ?4, ?5, ?5, ?7, ?8 WHERE (SELECT COUNT(*) FROM watches WHERE video_id = ?1) < ?6
      ON CONFLICT(video_id, viewer) DO UPDATE SET seconds = MAX(seconds, excluded.seconds),
-       name = CASE WHEN excluded.name != '' THEN excluded.name ELSE name END, updated_at = excluded.updated_at`,
+       name = CASE WHEN excluded.name != '' THEN excluded.name ELSE name END, updated_at = excluded.updated_at, ip = excluded.ip, place = excluded.place`,
   )
-    .bind(v.id, b.viewer, name, seconds, now, MAX_VIEWERS)
+    .bind(v.id, b.viewer, name, seconds, now, MAX_VIEWERS, o.ip, o.place)
     .run();
   return c.json({ ok: true });
 });

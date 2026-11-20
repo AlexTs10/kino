@@ -120,7 +120,7 @@ export function privacyPage(): string {
     <li>Your email address and name, to sign you in and show your name on your videos.</li>
     <li>Your videos, thumbnails and audio. We make a transcript, a title, a summary and chapters with AI (Cloudflare Workers AI, and Anthropic Claude if it is turned on).</li>
     <li>Comments, reactions and view counts on your videos.</li>
-    <li>When you watch a video: a random viewer id in your browser, how many seconds you watched, and your name if you gave one for comments. If you are signed in to Kino, the owner of the video sees your name or email.</li>
+    <li>When you watch a video: a random viewer id in your browser, how many seconds you watched, your name if you gave one for comments, your IP address and approximate place (city and network). The owner of the video sees these. If you are signed in to Kino, the owner of the video sees your name or email.</li>
   </ul>
   <h2>Who can see your videos</h2>
   <p>Each video has a share link that is hard to guess. Each person who has the link can watch the video, unless the owner set a password or an end date. We do not sell your data and we do not show ads.</p>

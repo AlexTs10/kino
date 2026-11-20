@@ -441,15 +441,17 @@ async function loadViewers() {
   const end = player.endTime();
   const dur = Number.isFinite(end) ? end - player.trimStart() : (v.duration_ms || 0) / 1000;
   const pct = (s) => (dur > 0 ? Math.min(100, Math.round((s / dur) * 100)) : 0);
+  const ips = new Set(rows.map((r) => r.ip).filter(Boolean)).size;
   const avg = Math.round(rows.reduce((n, r) => n + pct(r.seconds), 0) / rows.length);
   fill(pane,
-    h("div", { className: "pane-tools muted", style: "font-size:13px" }, `${rows.length} viewer${rows.length === 1 ? "" : "s"} · on average ${avg}% watched`),
+    h("div", { className: "pane-tools muted", style: "font-size:13px" }, `${rows.length} viewer${rows.length === 1 ? "" : "s"} · ${ips} IP address${ips === 1 ? "" : "es"} · on average ${avg}% watched`),
     h("div", { className: "scroll" }, rows.map((r) => h("div", { className: "viewer" },
       avatar(r.name || "?", 30),
       h("div", { className: "body" },
         h("div", { className: "meta" },
           h("strong", {}, r.name || "Anonymous viewer"),
           h("span", { className: "when", title: new Date(r.updated_at).toLocaleString() }, ago(r.updated_at))),
+        (r.place || r.ip) && h("div", { className: "muted", style: "font-size:12px" }, [r.place, r.ip].filter(Boolean).join(" · ")),
         h("div", { className: "meter", title: `${clock(r.seconds)} watched` }, h("div", { style: `width:${pct(r.seconds)}%` }))),
       h("span", { className: "pct" }, `${pct(r.seconds)}%`),
     ))),
