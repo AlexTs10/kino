@@ -174,6 +174,7 @@ async function startMeter() {
 
 $("start").onclick = async () => {
   $("start").disabled = true;
+  post({ kino: "starting" }); // now, while the click counts: the page opens the floating controls
   const mode = s.recordType === "cam" ? "cam" : s.camOn ? "screen-cam" : "screen";
   await chrome.storage.local.set({ mode });
   stopRelayMeter();

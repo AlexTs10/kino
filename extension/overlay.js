@@ -105,7 +105,7 @@
 
   let panelOpen = false;
   let rec = { status: "idle" };
-  let cfg = { camOn: true, recordType: "screen", camSize: "m", bubblePos: null, barPos: null, clickHighlights: true };
+  let cfg = { camOn: true, recordType: "screen", camSize: "m", bubblePos: null, barPos: null, clickHighlights: true, pipOpen: false };
   let timer = null;
   let wasActive = false;
 
@@ -121,6 +121,7 @@
   addEventListener("message", (e) => {
     if (e.origin !== EXT_ORIGIN || !e.data?.kino) return;
     if (e.data.kino === "close") setPanel(false);
+    if (e.data.kino === "starting") openPip();
     if (e.data.kino === "size") panel.style.height = `${Math.min(innerHeight - 28, e.data.h)}px`;
   });
 
@@ -176,7 +177,52 @@
   $(".bar .restart").onclick = () => send("restart");
   $(".bar .trash").onclick = () => confirm("Delete this recording?") && send("delete");
 
+  // ---------- Floating controls ----------
+  // The toolbar goes into a Document Picture-in-Picture window: it floats over all tabs and apps,
+  // and it is not in a tab or window recording. A full screen recording still shows it.
+  // Without the API (or if Chrome refuses), the toolbar stays on the page.
+  let pip = null;
+  let pipSeen = false; // a recording state arrived since the window opened
+  const LIVE = ["picking", "countdown", "recording", "paused", "finishing"];
+
+  async function openPip() {
+    if (pip) return;
+    chrome.storage.local.set({ pipOpen: false });
+    try {
+      pip = await window.documentPictureInPicture.requestWindow({ width: 72, height: 380 });
+    } catch {
+      return;
+    }
+    chrome.storage.local.set({ pipOpen: true }); // other tabs then hide their page toolbar
+    pipSeen = false;
+    const d = pip.document;
+    d.title = "Kino";
+    d.head.append(Object.assign(d.createElement("style"), { textContent: root.querySelector("style").textContent + PIP_CSS }));
+    d.body.append(bar, Object.assign(d.createElement("div"), { className: "wait", textContent: "Choose what to share" }));
+    pip.addEventListener("pagehide", () => {
+      root.append(bar);
+      pip = null;
+      try { chrome.storage.local.set({ pipOpen: false }); } catch { /* extension reloaded */ }
+      render();
+    });
+    render();
+  }
+  const PIP_CSS = `
+    html, body { margin: 0; height: 100%; background: #16161c; color: #fff; overflow: hidden; }
+    body { display: grid; place-items: center; }
+    .bar { position: static; box-shadow: none; backdrop-filter: none; background: transparent; }
+    .bar .grip { display: none; }
+    .wait { font: 600 12px ui-sans-serif, system-ui, sans-serif; text-align: center; padding: 8px; opacity: .8; }`;
+
+  function renderPip(st) {
+    if (!pip) return;
+    if (LIVE.includes(st)) pipSeen = true;
+    else if (pipSeen) return pip.close();
+    pip.document.querySelector(".wait").hidden = !bar.hidden;
+  }
+
   function placeBar() {
+    if (pip) return;
     const h = bar.offsetHeight || 300;
     const p = cfg.barPos || { x: 16, y: (innerHeight - h) / 2 - 60 };
     bar.style.left = `${Math.min(Math.max(8, p.x), innerWidth - 66)}px`;
@@ -284,7 +330,7 @@
     panel.hidden = !panelOpen;
     renderBubble();
 
-    bar.hidden = !recording;
+    bar.hidden = !recording || (cfg.pipOpen && !pip); // the controls float in another tab's window
     bar.classList.toggle("paused", st === "paused");
     $(".bar .live").hidden = st === "finishing";
     $(".bar .up").hidden = st !== "finishing";
@@ -293,6 +339,7 @@
     for (const b of root.querySelectorAll(".bar button")) b.disabled = st === "countdown";
     $(".count").hidden = st !== "countdown";
     if (recording) placeBar();
+    renderPip(st);
 
     const live = st === "recording" || st === "paused";
     if (!live) drawing = false;
@@ -333,7 +380,7 @@
 
   async function refresh() {
     try {
-      const data = await chrome.storage.local.get(["recState", "camOn", "recordType", "camSize", "bubblePos", "barPos", "clickHighlights"]);
+      const data = await chrome.storage.local.get(["recState", "camOn", "recordType", "camSize", "bubblePos", "barPos", "clickHighlights", "pipOpen"]);
       rec = data.recState || { status: "idle" };
       cfg = { ...cfg, ...data, camSize: data.camSize || "m" };
       if (!host.isConnected) (document.body || document.documentElement).append(host);
@@ -367,6 +414,7 @@
 
   function teardown() {
     clearInterval(timer);
+    pip?.close();
     host.remove();
     removeEventListener("resize", onResize);
     removeEventListener("pointerdown", onPagePointer, true);
